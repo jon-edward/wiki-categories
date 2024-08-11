@@ -1,3 +1,10 @@
 nimcache/
 nimblecache/
 htmldocs/
+
+# Executable
+/wiki_categories
+
+# Downloaded files
+**/data/*
+!**/data/.keep
