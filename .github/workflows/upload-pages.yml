@@ -1,0 +1,25 @@
+name: Gather Wikipedia category tree and upload to CF Pages
+on: workflow_dispatch
+jobs:
+  upload-pages:
+    runs-on: ubuntu-latest
+    steps:
+        - uses: actions/checkout@v4
+        
+        - uses: actions/setup-python@v5
+          with:
+            python-version: '3.10' 
+        
+        - name: Install requirements
+          run: python3 -m pip install -r ./requirements.txt
+        
+        - run: mkdir pages
+          # Test CF 
+        
+        - name: Publish to CF Pages
+          uses: cloudflare/pages-action@v1
+          with:
+            apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+            accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+            projectName: wiki-categories 
+            directory: pages
