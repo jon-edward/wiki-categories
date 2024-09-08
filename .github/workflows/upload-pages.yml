@@ -13,8 +13,7 @@ jobs:
         - name: Install requirements
           run: python3 -m pip install -r ./requirements.txt
         
-        - run: mkdir pages
-          # Test CF 
+        - run: sh ./build.sh
         
         - name: Publish to CF Pages
           uses: cloudflare/pages-action@v1
