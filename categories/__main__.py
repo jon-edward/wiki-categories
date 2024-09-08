@@ -72,16 +72,17 @@ if __name__ == "__main__":
 
     def gen_category_links():
         url = f"https://dumps.wikimedia.org/{lang}wiki/latest/{lang}wiki-latest-categorylinks.sql.gz"
-        return parse_category_links(split_lines(read_buffered_gzip_remote(url)))
+        return parse_category_links(split_lines(read_buffered_gzip_remote(url, progress=False)))
 
     def gen_pages():
         url = f"https://dumps.wikimedia.org/{lang}wiki/latest/{lang}wiki-latest-page.sql.gz"
-        return parse_pages(split_lines(read_buffered_gzip_remote(url)))
+        return parse_pages(split_lines(read_buffered_gzip_remote(url, progress=False)))
 
     process_categories(
         dest,
         gen_category_links,
         gen_pages,
         excluded_parents=excluded_parents,
-        excluded_article_categories=excluded_article_categories
+        excluded_article_categories=excluded_article_categories,
+        progress=False
     )
