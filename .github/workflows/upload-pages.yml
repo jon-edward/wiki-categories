@@ -1,10 +1,13 @@
 name: Gather Wikipedia category tree and upload to GH Pages
+
 on: workflow_dispatch
+
 permissions:
     id-token: write
     pages: write
+
 jobs:
-  upload-pages:
+  build:
     runs-on: ubuntu-latest
     steps:
         - uses: actions/checkout@v4
@@ -17,7 +20,20 @@ jobs:
           run: python3 -m pip install -r ./requirements.txt
         
         - run: sh ./build.sh
-        
+    
+  deploy:
+    needs: build
+    environment:
+        name: github-pages
+        url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+        - name: Configure Pages
+          uses: actions/configure-pages@v4
+        - name: Upload artifact
+          uses: actions/upload-pages-artifact@v2
+          with:
+            path: 'pages'
         - name: Deploy to GitHub Pages
           id: deployment
-          uses: actions/deploy-pages@v2
+          uses: actions/deploy-pages@v4
