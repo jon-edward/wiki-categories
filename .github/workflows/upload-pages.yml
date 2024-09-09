@@ -20,6 +20,14 @@ jobs:
           run: python3 -m pip install -r ./requirements.txt
         
         - run: sh ./build.sh
+
+        - name: Configure Pages
+          uses: actions/configure-pages@v4
+        
+        - name: Upload artifact
+          uses: actions/upload-pages-artifact@v2
+          with:
+            path: 'pages'
     
   deploy:
     needs: build
@@ -28,12 +36,6 @@ jobs:
         url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-        - name: Configure Pages
-          uses: actions/configure-pages@v4
-        - name: Upload artifact
-          uses: actions/upload-pages-artifact@v2
-          with:
-            path: 'pages'
         - name: Deploy to GitHub Pages
           id: deployment
           uses: actions/deploy-pages@v4
