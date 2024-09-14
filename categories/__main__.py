@@ -23,15 +23,40 @@ The container dir name for a given `category_id` is `category_id % 2_000`.
 """
 
 import argparse
+import json
+import logging
 import os
 import pathlib
+import urllib.parse
+from typing import Optional
+
+import requests
 
 from process_categories import process_categories
-from gzip_buffer import read_buffered_gzip_local, read_buffered_gzip_remote
+from gzip_buffer import read_buffered_gzip_remote
 from parse import parse_category_links, parse_pages, split_lines
 
 
 DEFAULT_DEST = pathlib.Path(__file__).parent.parent.joinpath("pages")
+GH_PAGES_URL = os.environ.get("GH_PAGES_URL", None)
+
+
+def is_redundant(meta_url: str, _category_links_updated: Optional[str], _pages_updated: Optional[str]) -> bool:
+    if _category_links_updated is None or _pages_updated is None:
+        return False
+
+    try:
+        meta_json = requests.get(meta_url).json()
+    except requests.exceptions.JSONDecodeError:
+        return False
+    
+    try:
+        old_category_links_updated = meta_json["categoryLinksUpdated"]
+        old_pages_updated = meta_json["pagesUpdated"]
+    except KeyError:
+        return False
+    
+    return old_category_links_updated == _category_links_updated and old_pages_updated == _pages_updated
 
 
 if __name__ == "__main__":
@@ -59,10 +84,20 @@ if __name__ == "__main__":
         nargs="*"
     )
 
+    parser.add_argument(
+        "--debug",
+        help="Show progress and debug information.",
+        action="store_true"
+    )
+
     args = parser.parse_args()
 
     lang: str = args.language
     dest: pathlib.Path = args.dest
+    debug: bool = args.debug
+
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
 
     excluded_parents = args.excluded_parents
     excluded_article_categories = args.excluded_article_categories
@@ -70,19 +105,37 @@ if __name__ == "__main__":
     os.makedirs(dest, exist_ok=True)
     assert not len(os.listdir(dest)), f"The output folder {dest} is not empty."
 
+    category_links_url = f"https://dumps.wikimedia.org/{lang}wiki/latest/{lang}wiki-latest-categorylinks.sql.gz"
+    pages_url = f"https://dumps.wikimedia.org/{lang}wiki/latest/{lang}wiki-latest-page.sql.gz"
+
     def gen_category_links():
-        url = f"https://dumps.wikimedia.org/{lang}wiki/latest/{lang}wiki-latest-categorylinks.sql.gz"
-        return parse_category_links(split_lines(read_buffered_gzip_remote(url, progress=False)))
+        return parse_category_links(split_lines(read_buffered_gzip_remote(category_links_url, progress=debug)))
 
     def gen_pages():
-        url = f"https://dumps.wikimedia.org/{lang}wiki/latest/{lang}wiki-latest-page.sql.gz"
-        return parse_pages(split_lines(read_buffered_gzip_remote(url, progress=False)))
+        return parse_pages(split_lines(read_buffered_gzip_remote(pages_url, progress=debug)))
 
-    process_categories(
+    category_links_updated = requests.head(category_links_url).headers.get("Last-Modified", None)
+    pages_updated = requests.head(pages_url).headers.get("Last-Modified", None)
+
+    if GH_PAGES_URL is not None and is_redundant(
+            urllib.parse.urljoin(GH_PAGES_URL, "meta.json"), category_links_updated, pages_updated):
+        print("Run is redundant, all Wiki data dump assets are up to date. Exiting.")
+        exit(0)
+
+    categories_info = process_categories(
         dest,
         gen_category_links,
         gen_pages,
         excluded_parents=excluded_parents,
         excluded_article_categories=excluded_article_categories,
-        progress=False
+        progress=debug
     )
+
+    meta = {
+        "categoryLinksUpdated": category_links_updated,
+        "pagesUpdated": pages_updated,
+        "categoriesInfo": categories_info.to_json()
+    }
+
+    with dest.joinpath("meta.json").open("w") as f_meta:
+        json.dump(meta, f_meta)

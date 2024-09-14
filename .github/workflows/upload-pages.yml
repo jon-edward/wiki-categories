@@ -1,6 +1,9 @@
 name: Gather Wikipedia category tree and upload to GH Pages
 
-on: workflow_dispatch
+on:
+    schedule:
+      - cron: '30 5 * * *'
+    workflow_dispatch:
 
 permissions:
     id-token: write
@@ -19,9 +22,10 @@ jobs:
         - name: Install requirements
           run: python3 -m pip install -r ./requirements.txt
         
-        - run: sh ./build.sh
+        - run: GH_PAGES_URL="https://jon-edward.github.io/wiki-categories/" sh ./build.sh
         
         - name: Upload artifact
+          if: ${{ hashFiles('pages/meta.json') != '' }}
           uses: actions/upload-pages-artifact@v2
           with:
             path: 'pages'
@@ -32,6 +36,7 @@ jobs:
         name: github-pages
         url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    if: ${{ hashFiles('pages/meta.json') != '' }}
     steps:
         - name: Deploy to GitHub Pages
           id: deployment

@@ -1,11 +1,13 @@
 from array import array
 from collections import defaultdict
+import dataclasses
+import datetime
 import logging
 import os
 import pathlib
 import shutil
 from textwrap import dedent
-from typing import Callable, Dict, DefaultDict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, DefaultDict, Iterable, List, Optional, Set, Tuple, Union
 
 import networkx as nx
 
@@ -38,13 +40,27 @@ def serialize_category(
     )
 
 
+@dataclasses.dataclass
+class CategoriesInfo:
+    categories_count: int
+    articles_count: int
+    finished_time: datetime.datetime
+
+    def to_json(self) -> Dict[str, Union[str, int]]:
+        return {
+            "categoriesCount": self.categories_count,
+            "articlesCount": self.articles_count,
+            "finishedTime": self.finished_time.strftime(r"%d/%m/%Y, %H:%M:%S")
+        }
+
+
 def process_categories(
         dest: pathlib.Path,
         category_links_gen: Callable[[], Iterable[CategoryLink]],
         pages_gen: Callable[[], Iterable[Page]],
         excluded_parents: Optional[Iterable[int]] = None,
         excluded_article_categories: Optional[Iterable[int]] = None,
-        progress: bool = True):
+        progress: bool = True) -> CategoriesInfo:
 
     if excluded_parents is None:
         excluded_parents = ()
@@ -105,7 +121,7 @@ def process_categories(
     cat_graph = nx.DiGraph()
     cat_graph.add_edges_from(category_edges)
 
-    def read_article_list(category_id: int) -> array:
+    def read_article_list(category_id: int) -> array[int]:
         try:
             return array(_UINT32_TYPECODE, articles_dir.joinpath(f"{category_id}.articles").read_bytes())
         except FileNotFoundError:
@@ -135,6 +151,8 @@ def process_categories(
         from tqdm import tqdm
 
         p_bar = tqdm(total=len(cat_graph))
+    
+    added_articles: Set[int] = set()
 
     for category in cat_graph:
 
@@ -145,11 +163,14 @@ def process_categories(
         category_chunk_dir = dest.joinpath(str(category % _BALANCING_MOD_OPERAND))
         category_chunk_dir.mkdir(exist_ok=True)
 
+        articles = [a for a in read_article_list(category) if a not in excluded_articles]
+        added_articles.update(articles)
+
         category_chunk_dir.joinpath(f"{category}.category").write_bytes(serialize_category(
             name,
             predecessors,
             successors,
-            [a for a in read_article_list(category) if a not in excluded_articles]
+            articles
         ))
 
         if p_bar is not None:
@@ -176,3 +197,9 @@ def process_categories(
         p_bar.close()
 
     shutil.rmtree(articles_dir)
+
+    return CategoriesInfo(
+        categories_count=len(cat_graph),
+        articles_count=len(added_articles),
+        finished_time=datetime.datetime.now()
+    )
