@@ -36,8 +36,8 @@ jobs:
         name: github-pages
         url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('pages/meta.json') != '' }}
     steps:
         - name: Deploy to GitHub Pages
+          if: ${{ hashFiles('pages/meta.json') != '' }}
           id: deployment
           uses: actions/deploy-pages@v3
