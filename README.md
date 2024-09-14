@@ -27,21 +27,22 @@ category name, its neighbors, and its articles.
 
 The structure is described as follows:
 
-* (4 bytes) `name_bytes_len`
+* (4 bytes, unsigned int32) `name_bytes_len`
 
-* utf-8 string of the category title, of byte length 
+* utf-8 string of the category title, of total byte length 
   `name_bytes_len`
 
-* (4 bytes) `predecessors_bytes_len`
+* (4 bytes, unsigned int32) `predecessors_bytes_len`
 
-* Unsigned int32 list of predecessor ids, of byte length
+* Unsigned int32 array of predecessor ids, of total byte length
   `predecessors_bytes_len`
-* (4 bytes) `successors_bytes_len`
 
-* Unsigned int32 list of successor ids, of byte length 
+* (4 bytes, unsigned int32) `successors_bytes_len`
+
+* Unsigned int32 array of successor ids, of total byte length 
   `successors_bytes_len`
 
-* Unsigned int32 list of article ids, to EOF
+* Unsigned int32 array of article ids, to EOF
 
 The script generates a `.index` file in the root directory and 
 each of its bins - this should be interpreted as an array 
@@ -49,6 +50,11 @@ of unsigned 32-bit integers. This array described the names of
 the bins (in the case of the root directory), and the ids of 
 the categories contained within the bin (in the case of a 
 category bin).
+
+The script generates a `meta.json` file in the output directory root. 
+This is used for checking if the external assets have changed 
+since the last run, and provides basic information about the 
+run output.
 
 The motivation of separating the large number of category 
 files into bins serves two major purposes - to allow the user 
