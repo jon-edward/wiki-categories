@@ -25,7 +25,7 @@ jobs:
         - run: GH_PAGES_URL="https://jon-edward.github.io/wiki-categories/" sh ./build.sh
         
         - name: Upload artifact
-          if: ${{ hashFiles('pages/meta.json') != '' }}
+          if: ${{ hashFiles('pages/run_info.json') != '' }}
           uses: actions/upload-pages-artifact@v2
           with:
             path: 'pages'
@@ -38,6 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
         - name: Deploy to GitHub Pages
-          if: ${{ hashFiles('pages/meta.json') != '' }}
+          if: ${{ hashFiles('pages/run_info.json') != '' }}
           id: deployment
           uses: actions/deploy-pages@v3

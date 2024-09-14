@@ -51,7 +51,7 @@ the bins (in the case of the root directory), and the ids of
 the categories contained within the bin (in the case of a 
 category bin).
 
-The script generates a `meta.json` file in the output directory root. 
+The script generates a `run_info.json` file in the output directory root. 
 This is used for checking if the external assets have changed 
 since the last run, and provides basic information about the 
 run output.

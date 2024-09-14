@@ -1,27 +1,3 @@
-"""
-The CLI for serializing the Wikipedia category tree. Use `python3 categories --help` for options.
-
-Useful ids for trimming the English Wikipedia:
-
-* 15961454    - Hidden Categories
-* 869270      - Stub Categories
-* 43077354    - All Stub Articles
-
-The .category file format is a compact binary file structure for storing category information, described as follows:
-
-* (4 bytes) name_bytes_len
-* utf-8 string of the category title, of byte length name_bytes_len
-* (4 bytes) predecessors_bytes_len
-* Unsigned int32 list of predecessor ids, of byte length predecessors_bytes_len
-* (4 bytes) successors_bytes_len
-* Unsigned int32 list of successor ids, of byte length successors_bytes_len
-* Unsigned int32 list of article ids, to EOF
-
-The .index file format is an unsigned int32 list of category ids or container directory names. File operations become
-more challenging as the directory becomes extremely large, so this subdivides the large category tree into chunks.
-The container dir name for a given `category_id` is `category_id % 2_000`.
-"""
-
 import argparse
 import json
 import logging
@@ -41,18 +17,18 @@ DEFAULT_DEST = pathlib.Path(__file__).parent.parent.joinpath("pages")
 GH_PAGES_URL = os.environ.get("GH_PAGES_URL", None)
 
 
-def is_redundant(meta_url: str, _category_links_updated: Optional[str], _pages_updated: Optional[str]) -> bool:
+def is_redundant(run_info_url: str, _category_links_updated: Optional[str], _pages_updated: Optional[str]) -> bool:
     if _category_links_updated is None or _pages_updated is None:
         return False
 
     try:
-        meta_json = requests.get(meta_url).json()
+        run_info_json = requests.get(run_info_url).json()
     except requests.exceptions.JSONDecodeError:
         return False
     
     try:
-        old_category_links_updated = meta_json["categoryLinksUpdated"]
-        old_pages_updated = meta_json["pagesUpdated"]
+        old_category_links_updated = run_info_json["categoryLinksUpdated"]
+        old_pages_updated = run_info_json["pagesUpdated"]
     except KeyError:
         return False
     
@@ -118,7 +94,7 @@ if __name__ == "__main__":
     pages_updated = requests.head(pages_url).headers.get("Last-Modified", None)
 
     if GH_PAGES_URL is not None and is_redundant(
-            urllib.parse.urljoin(GH_PAGES_URL, "meta.json"), category_links_updated, pages_updated):
+            urllib.parse.urljoin(GH_PAGES_URL, "run_info.json"), category_links_updated, pages_updated):
         print("Run is redundant, all Wiki data dump assets are up to date. Exiting.")
         exit(0)
 
@@ -131,11 +107,11 @@ if __name__ == "__main__":
         progress=debug
     )
 
-    meta = {
-        "categoryLinksUpdated": category_links_updated,
-        "pagesUpdated": pages_updated,
+    run_info = {
+        "categoryLinksModified": category_links_updated,
+        "pagesModified": pages_updated,
         "categoriesInfo": categories_info.to_json()
     }
 
-    with dest.joinpath("meta.json").open("w") as f_meta:
-        json.dump(meta, f_meta)
+    with dest.joinpath("run_info.json").open("w") as f_info:
+        json.dump(run_info, f_info, indent=1)

@@ -44,13 +44,13 @@ def serialize_category(
 class CategoriesInfo:
     categories_count: int
     articles_count: int
-    finished_time: datetime.datetime
+    finished: datetime.datetime
 
     def to_json(self) -> Dict[str, Union[str, int]]:
         return {
             "categoriesCount": self.categories_count,
             "articlesCount": self.articles_count,
-            "finishedTime": self.finished_time.strftime(r"%d/%m/%Y, %H:%M:%S")
+            "finished": self.finished.strftime(r"%d/%m/%Y, %H:%M:%S")
         }
 
 
@@ -201,5 +201,5 @@ def process_categories(
     return CategoriesInfo(
         categories_count=len(cat_graph),
         articles_count=len(added_articles),
-        finished_time=datetime.datetime.now()
+        finished=datetime.datetime.now()
     )
