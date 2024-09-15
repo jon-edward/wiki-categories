@@ -13,7 +13,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     outputs:
-      pages_generated: ${{steps.upload_artifact.outputs.artifact_uploaded}}
+      needs_upload: ${{steps.check_output.outputs.artifact_uploaded}}
     steps:
         - uses: actions/checkout@v4
         
@@ -27,11 +27,14 @@ jobs:
         - run: GH_PAGES_URL="https://jon-edward.github.io/wiki-categories/" sh ./build.sh
         
         - name: Upload artifact
-          id: upload_artifact
           if: ${{ hashFiles('pages/run_info.json') != '' }}
           uses: actions/upload-pages-artifact@v2
           with:
             path: 'pages'
+
+        - name: Check output
+          id: check_output
+          if: ${{ hashFiles('pages/run_info.json') != '' }}
           run: echo "artifact_uploaded=true" >> "$GITHUB_OUTPUT"
     
   deploy:
@@ -42,6 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
         - name: Deploy to GitHub Pages
-          if: ${{needs.build.outputs.pages_generated}}
+          if: ${{needs.build.outputs.needs_upload}}
           id: deployment
           uses: actions/deploy-pages@v3
