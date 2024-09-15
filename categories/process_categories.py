@@ -61,6 +61,9 @@ def process_categories(
         excluded_parents: Optional[Iterable[int]] = None,
         excluded_article_categories: Optional[Iterable[int]] = None,
         progress: bool = True) -> CategoriesInfo:
+    """
+    Main function of categories and used in CLI. See README.md for behavior.
+    """
 
     if excluded_parents is None:
         excluded_parents = ()

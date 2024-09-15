@@ -7,6 +7,10 @@ from tqdm import tqdm
 
 
 def read_buffered_gzip_remote(url: str, chunk_size: int = 1024, progress: bool = True) -> Iterable[bytes]:
+    """
+    Read chunks of a gzipped remote asset by url.
+    """
+
     response = requests.get(url, stream=True)
 
     stream = response.iter_content(chunk_size=chunk_size)
@@ -29,6 +33,10 @@ def read_buffered_gzip_remote(url: str, chunk_size: int = 1024, progress: bool =
 
 
 def read_buffered_gzip_local(path: pathlib.Path, chunk_size: int = 1024, progress: bool = True) -> Iterable[bytes]:
+    """
+    Read chunks of a gzipped local asset by path.
+    """
+
     dc_obj = zlib.decompressobj(wbits=zlib.MAX_WBITS | 16)
 
     p_bar = None
