@@ -22,7 +22,7 @@ jobs:
         - name: Install requirements
           run: python3 -m pip install -r ./requirements.txt
         
-        - run: GH_PAGES_URL="https://jon-edward.github.io/wiki-categories/" sh ./build.sh
+        - run: sh ./build.sh
         
         - name: Upload artifact
           if: ${{ hashFiles('pages/run_info.json') != '' }}

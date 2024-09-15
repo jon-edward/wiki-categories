@@ -4,6 +4,7 @@ import logging
 import os
 import pathlib
 import urllib.parse
+import shutil
 from typing import Optional
 
 import requests
@@ -74,11 +75,18 @@ if __name__ == "__main__":
         action="store_true"
     )
 
+    parser.add_argument(
+        "--clean",
+        help="Clean output folder before starting if the folder isn't empty.",
+        action="store_true"
+    )
+
     args = parser.parse_args()
 
     lang: str = args.language
     dest: pathlib.Path = args.dest
     debug: bool = args.debug
+    clean: bool = args.clean
 
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -88,8 +96,11 @@ if __name__ == "__main__":
     excluded_parents = args.excluded_parents
     excluded_article_categories = args.excluded_article_categories
 
+    if clean and dest.exists():
+        shutil.rmtree(dest)
+
     os.makedirs(dest, exist_ok=True)
-    assert not len(os.listdir(dest)), f"The output folder {dest} is not empty."
+    assert clean or len(os.listdir(dest)), f"The output folder {dest} is not empty."
 
     category_links_url = f"https://dumps.wikimedia.org/{lang}wiki/latest/{lang}wiki-latest-categorylinks.sql.gz"
     pages_url = f"https://dumps.wikimedia.org/{lang}wiki/latest/{lang}wiki-latest-page.sql.gz"
@@ -103,8 +114,9 @@ if __name__ == "__main__":
     category_links_modified = requests.head(category_links_url).headers.get("Last-Modified", None)
     pages_modified = requests.head(pages_url).headers.get("Last-Modified", None)
 
-    if GH_PAGES_URL is not None and is_redundant(urllib.parse.urljoin(GH_PAGES_URL, "run_info.json"),
-                                                 category_links_modified, pages_modified):
+    if GH_PAGES_URL is not None and is_redundant(
+            urllib.parse.urljoin(GH_PAGES_URL, "run_info.json"),
+            category_links_modified, pages_modified):
         logging.info("Run is redundant, all Wiki data dump assets are up to date. Exiting.")
         exit(0)
 
