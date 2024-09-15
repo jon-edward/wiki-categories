@@ -27,8 +27,8 @@ def is_redundant(run_info_url: str, _category_links_updated: Optional[str], _pag
         return False
     
     try:
-        old_category_links_updated = run_info_json["categoryLinksUpdated"]
-        old_pages_updated = run_info_json["pagesUpdated"]
+        old_category_links_updated = run_info_json["categoryLinksModified"]
+        old_pages_updated = run_info_json["pagesModified"]
     except KeyError:
         return False
     
