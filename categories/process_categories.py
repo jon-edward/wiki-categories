@@ -17,6 +17,8 @@ from parse import CategoryLink, Page
 _UINT32_TYPECODE = "I"
 _BALANCING_MOD_OPERAND = 2_000
 
+_DATETIME_STRFTIME = "%m/%d/%Y, %H:%M:%S"
+
 
 def _to_uint32(val: Iterable[int]) -> bytes:
     return array(_UINT32_TYPECODE, val).tobytes()
@@ -50,7 +52,7 @@ class CategoriesInfo:
         return {
             "categoriesCount": self.categories_count,
             "articlesCount": self.articles_count,
-            "finished": self.finished.strftime(r"%d/%m/%Y, %H:%M:%S")
+            "finished": self.finished.strftime(_DATETIME_STRFTIME)
         }
 
 
@@ -145,10 +147,10 @@ def process_categories(
     p_bar = None
 
     if excluded_articles or excluded_categories:
-        logging.info(dedent(f"""
-            Excluding {len(excluded_categories)} categories.
-            Excluding {len(excluded_articles)} articles.
-        """))
+        logging.debug(dedent(f"""
+            Excluding %d categories.
+            Excluding %d articles.
+        """), (len(excluded_categories), len(excluded_articles)))
 
     if progress:
         from tqdm import tqdm
@@ -201,8 +203,21 @@ def process_categories(
 
     shutil.rmtree(articles_dir)
 
+    categories_count = len(cat_graph)
+    articles_count = len(added_articles)
+    finished = datetime.datetime.now()
+
+    logging.debug(
+        dedent("""
+            %d total categories
+            %d total articles
+            Finished at %s 
+        """),
+        (categories_count, articles_count, finished.strftime(_DATETIME_STRFTIME))
+    )
+
     return CategoriesInfo(
-        categories_count=len(cat_graph),
-        articles_count=len(added_articles),
-        finished=datetime.datetime.now()
+        categories_count=categories_count,
+        articles_count=articles_count,
+        finished=finished
     )
