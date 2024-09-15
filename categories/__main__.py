@@ -17,8 +17,15 @@ DEFAULT_DEST = pathlib.Path(__file__).parent.parent.joinpath("pages")
 GH_PAGES_URL = os.environ.get("GH_PAGES_URL", None)
 
 
-def is_redundant(run_info_url: str, _category_links_updated: Optional[str], _pages_updated: Optional[str]) -> bool:
-    if _category_links_updated is None or _pages_updated is None:
+def is_redundant(run_info_url: str, _category_links_modified: Optional[str], _pages_modified: Optional[str]) -> bool:
+    """
+    Check if current run is redundant to the last run.
+
+    The run is redundant if all assets used in the current and most recent run have the same 'Last-Modified' response
+    headers.
+    """
+
+    if _category_links_modified is None or _pages_modified is None:
         return False
 
     try:
@@ -27,16 +34,17 @@ def is_redundant(run_info_url: str, _category_links_updated: Optional[str], _pag
         return False
     
     try:
-        old_category_links_updated = run_info_json["categoryLinksModified"]
-        old_pages_updated = run_info_json["pagesModified"]
+        old_category_links_modified = run_info_json["categoryLinksModified"]
+        old_pages_modified = run_info_json["pagesModified"]
     except KeyError:
         return False
     
-    return old_category_links_updated == _category_links_updated and old_pages_updated == _pages_updated
+    return old_category_links_modified == _category_links_modified and old_pages_modified == _pages_modified
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("categories", description="Collect category information and output to folder.")
+    parser = argparse.ArgumentParser(
+        "categories", description="Collect category information and output to folder.")
 
     parser.add_argument("language", help="The wiki language to collect categories for.")
 
@@ -74,6 +82,8 @@ if __name__ == "__main__":
 
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
+    else:
+        logging.getLogger().setLevel(logging.INFO)
 
     excluded_parents = args.excluded_parents
     excluded_article_categories = args.excluded_article_categories
@@ -90,12 +100,12 @@ if __name__ == "__main__":
     def gen_pages():
         return parse_pages(split_lines(read_buffered_gzip_remote(pages_url, progress=debug)))
 
-    category_links_updated = requests.head(category_links_url).headers.get("Last-Modified", None)
-    pages_updated = requests.head(pages_url).headers.get("Last-Modified", None)
+    category_links_modified = requests.head(category_links_url).headers.get("Last-Modified", None)
+    pages_modified = requests.head(pages_url).headers.get("Last-Modified", None)
 
-    if GH_PAGES_URL is not None and is_redundant(
-            urllib.parse.urljoin(GH_PAGES_URL, "run_info.json"), category_links_updated, pages_updated):
-        print("Run is redundant, all Wiki data dump assets are up to date. Exiting.")
+    if GH_PAGES_URL is not None and is_redundant(urllib.parse.urljoin(GH_PAGES_URL, "run_info.json"),
+                                                 category_links_modified, pages_modified):
+        logging.info("Run is redundant, all Wiki data dump assets are up to date. Exiting.")
         exit(0)
 
     categories_info = process_categories(
@@ -108,9 +118,9 @@ if __name__ == "__main__":
     )
 
     run_info = {
-        "categoryLinksModified": category_links_updated,
-        "pagesModified": pages_updated,
-        "categoriesInfo": categories_info.to_json()
+        "categoryLinksModified": category_links_modified,
+        "pagesModified": pages_modified,
+        **categories_info.to_json()
     }
 
     with dest.joinpath("run_info.json").open("w") as f_info:
