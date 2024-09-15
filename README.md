@@ -46,7 +46,7 @@ The structure is described as follows:
 
 The script generates a `.index` file in the root directory and 
 each of its bins - this should be interpreted as an array 
-of unsigned 32-bit integers. This array described the names of 
+of unsigned 32-bit integers. This array describes the names of 
 the bins (in the case of the root directory), and the ids of 
 the categories contained within the bin (in the case of a 
 category bin).
