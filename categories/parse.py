@@ -1,3 +1,7 @@
+"""
+Utilities for parsing SQL statements within a Wikipedia data dump file.
+"""
+
 import ast
 import dataclasses
 import re
@@ -11,6 +15,10 @@ _FLOAT_VALUE = r"\d+\.\d+"
 
 @dataclasses.dataclass
 class CategoryLink:
+    """
+    A deserialized entry within a category links SQL script.
+    """
+
     child_id: int
     parent_name: str
     is_article: bool
@@ -18,11 +26,19 @@ class CategoryLink:
 
 @dataclasses.dataclass
 class Page:
+    """
+    A deserialized entry within a pages SQL script.
+    """
+
     page_id: int
     name: str
 
 
 def split_lines(buffered_content: Iterable[bytes]) -> Iterable[bytes]:
+    """
+    Consume the buffered content and split into lines at the '\n' line seperator.
+    """
+
     sep = b"\n"
 
     line_buffer = b""
@@ -32,14 +48,16 @@ def split_lines(buffered_content: Iterable[bytes]) -> Iterable[bytes]:
 
         lines[0] = line_buffer + lines[0]
         line_buffer = lines.pop()
-
-        for line in lines:
-            yield line
+        yield from lines
 
     yield line_buffer
 
 
 def parse_category_links(lines: Iterable[bytes]) -> Iterable[CategoryLink]:
+    """
+    Deserialize category link SQL script lines into CategoryLink objects.
+    """
+
     pattern: re.Pattern = re.compile(
         rf"\(({_INTEGER_VALUE}),({_STRING_VALUE}),(?:{_STRING_VALUE},){{4}}'(subcat|page)'\)"
     )
@@ -58,6 +76,10 @@ def parse_category_links(lines: Iterable[bytes]) -> Iterable[CategoryLink]:
 
 
 def parse_pages(lines: Iterable[bytes]) -> Iterable[Page]:
+    """
+    Deserialize pages SQL script lines into Page objects.
+    """
+
     pattern: re.Pattern = re.compile(
         rf"\(({_INTEGER_VALUE}),14,"
         rf"({_STRING_VALUE}),{_INTEGER_VALUE},"

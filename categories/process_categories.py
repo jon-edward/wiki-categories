@@ -1,3 +1,7 @@
+"""
+Contains the main function entrypoint for categories.
+"""
+
 from array import array
 from collections import defaultdict
 import dataclasses
@@ -7,9 +11,20 @@ import os
 import pathlib
 import shutil
 from textwrap import dedent
-from typing import Callable, Dict, DefaultDict, Iterable, List, Optional, Set, Tuple, Union
+from typing import (
+    Callable,
+    Dict,
+    DefaultDict,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import networkx as nx
+from tqdm import tqdm
 
 from parse import CategoryLink, Page
 
@@ -24,45 +39,58 @@ def _to_uint32(val: Iterable[int]) -> bytes:
     return array(_UINT32_TYPECODE, val).tobytes()
 
 
-def serialize_category(
-        name: str,
-        predecessors: Iterable[int],
-        successors: Iterable[int],
-        articles: Iterable[int]) -> bytes:
+def _serialize_category(
+    name: str,
+    predecessors: Iterable[int],
+    successors: Iterable[int],
+    articles: Iterable[int],
+) -> bytes:
 
     name_bytes = name.encode()
     predecessors_bytes = _to_uint32(predecessors)
     successors_bytes = _to_uint32(successors)
 
     return (
-        len(name_bytes).to_bytes(length=4) + name_bytes +
-        len(predecessors_bytes).to_bytes(length=4) + predecessors_bytes +
-        len(successors_bytes).to_bytes(length=4) + successors_bytes +
-        _to_uint32(articles)
+        len(name_bytes).to_bytes(length=4)
+        + name_bytes
+        + len(predecessors_bytes).to_bytes(length=4)
+        + predecessors_bytes
+        + len(successors_bytes).to_bytes(length=4)
+        + successors_bytes
+        + _to_uint32(articles)
     )
 
 
 @dataclasses.dataclass
 class CategoriesInfo:
+    """
+    Information about the completed run, will be added to `run_info.json`.
+    """
+
     categories_count: int
     articles_count: int
     finished: datetime.datetime
 
     def to_json(self) -> Dict[str, Union[str, int]]:
+        """
+        Makes run information safe for use in a JSON file.
+        """
+
         return {
             "categoriesCount": self.categories_count,
             "articlesCount": self.articles_count,
-            "finished": self.finished.strftime(_DATETIME_STRFTIME)
+            "finished": self.finished.strftime(_DATETIME_STRFTIME),
         }
 
 
 def process_categories(
-        dest: pathlib.Path,
-        category_links_gen: Callable[[], Iterable[CategoryLink]],
-        pages_gen: Callable[[], Iterable[Page]],
-        excluded_parents: Optional[Iterable[int]] = None,
-        excluded_article_categories: Optional[Iterable[int]] = None,
-        progress: bool = True) -> CategoriesInfo:
+    dest: pathlib.Path,
+    category_links_gen: Callable[[], Iterable[CategoryLink]],
+    pages_gen: Callable[[], Iterable[Page]],
+    excluded_parents: Optional[Iterable[int]] = None,
+    excluded_article_categories: Optional[Iterable[int]] = None,
+    progress: bool = True,
+) -> CategoriesInfo:
     """
     Main function of categories and used in CLI. See README.md for behavior.
     """
@@ -81,9 +109,7 @@ def process_categories(
     for page in pages_gen():
         id_to_name[page.page_id] = page.name
 
-    name_to_id = {
-        v: k for k, v in id_to_name.items()
-    }
+    name_to_id = {v: k for k, v in id_to_name.items()}
 
     category_edges: List[Tuple[int, int]] = []
 
@@ -128,7 +154,10 @@ def process_categories(
 
     def read_article_list(category_id: int) -> array[int]:
         try:
-            return array(_UINT32_TYPECODE, articles_dir.joinpath(f"{category_id}.articles").read_bytes())
+            return array(
+                _UINT32_TYPECODE,
+                articles_dir.joinpath(f"{category_id}.articles").read_bytes(),
+            )
         except FileNotFoundError:
             return array(_UINT32_TYPECODE)
 
@@ -147,16 +176,19 @@ def process_categories(
     p_bar = None
 
     if excluded_articles or excluded_categories:
-        logging.debug(dedent(f"""
-            Excluding %d categories.
-            Excluding %d articles.
-        """), (len(excluded_categories), len(excluded_articles)))
+        logging.debug(
+            dedent(
+                """
+                    Excluding %d categories.
+                    Excluding %d articles.
+                """
+            ),
+            (len(excluded_categories), len(excluded_articles)),
+        )
 
     if progress:
-        from tqdm import tqdm
-
         p_bar = tqdm(total=len(cat_graph))
-    
+
     added_articles: Set[int] = set()
 
     for category in cat_graph:
@@ -168,15 +200,14 @@ def process_categories(
         category_chunk_dir = dest.joinpath(str(category % _BALANCING_MOD_OPERAND))
         category_chunk_dir.mkdir(exist_ok=True)
 
-        articles = [a for a in read_article_list(category) if a not in excluded_articles]
+        articles = [
+            a for a in read_article_list(category) if a not in excluded_articles
+        ]
         added_articles.update(articles)
 
-        category_chunk_dir.joinpath(f"{category}.category").write_bytes(serialize_category(
-            name,
-            predecessors,
-            successors,
-            articles
-        ))
+        category_chunk_dir.joinpath(f"{category}.category").write_bytes(
+            _serialize_category(name, predecessors, successors, articles)
+        )
 
         if p_bar is not None:
             p_bar.update(1)
@@ -196,7 +227,9 @@ def process_categories(
         container_path = dest.joinpath(container)
         if not container_path.is_dir():
             continue
-        container_path.joinpath("dir_list.index").write_bytes(dir_list_content(container_path))
+        container_path.joinpath("dir_list.index").write_bytes(
+            dir_list_content(container_path)
+        )
 
     if p_bar is not None:
         p_bar.close()
@@ -208,16 +241,18 @@ def process_categories(
     finished = datetime.datetime.now()
 
     logging.debug(
-        dedent("""
+        dedent(
+            """
             %d total categories
             %d total articles
             Finished at %s 
-        """),
-        (categories_count, articles_count, finished.strftime(_DATETIME_STRFTIME))
+        """
+        ),
+        (categories_count, articles_count, finished.strftime(_DATETIME_STRFTIME)),
     )
 
     return CategoriesInfo(
         categories_count=categories_count,
         articles_count=articles_count,
-        finished=finished
+        finished=finished,
     )
