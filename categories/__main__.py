@@ -113,7 +113,7 @@ if __name__ == "__main__":
         shutil.rmtree(dest)
 
     os.makedirs(dest, exist_ok=True)
-    assert clean or len(os.listdir(dest)), f"The output folder {dest} is not empty."
+    assert clean or not os.listdir(dest), f"The output folder {dest} is not empty."
 
     category_links_url = (
         f"https://dumps.wikimedia.org/{lang}wiki/"
