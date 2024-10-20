@@ -1,3 +1,4 @@
+import itertools
 import os
 import pathlib
 
@@ -57,10 +58,12 @@ INDEX_HTML = """
 </html>
 """
 
-ROOT_PATH = pathlib.Path("/wiki-categories/")
 
-
-def generate_indices(path: pathlib.Path):
+def generate_indices(path: pathlib.Path, root_path=pathlib.Path("/wiki-categories/")):
+    """
+    Generate an index.html file at each subdirectory and root of path directory that lists
+    files for navigation.
+    """
     for subdir, dirs, files in os.walk(path):
         with open(
             pathlib.Path(subdir, "index.html"),
@@ -76,7 +79,7 @@ def generate_indices(path: pathlib.Path):
             def create_sub_path_entry(
                 sub_path: pathlib.Path, display_text: str = None, is_dir: bool = False
             ):
-                p = ROOT_PATH.joinpath(sub_path.relative_to(path))
+                p = root_path.joinpath(sub_path.relative_to(path))
 
                 li_tag = index.new_tag("li")
                 li_tag.attrs["class"] = "is-dir" if is_dir else "is-file"
@@ -89,11 +92,7 @@ def generate_indices(path: pathlib.Path):
                 )
 
                 if display_text is None:
-                    a_tag.append(
-                        format_dir(p.relative_to(ROOT_PATH))
-                        if is_dir
-                        else str(p.relative_to(ROOT_PATH))
-                    )
+                    a_tag.append(p.name + ("/" if is_dir else ""))
                 else:
                     a_tag.append(display_text)
 
@@ -114,10 +113,24 @@ def generate_indices(path: pathlib.Path):
             except ValueError:
                 pass
 
+            max_name_len = max(
+                len(x.split(".")[0]) for x in itertools.chain(files, dirs)
+            )
+
+            def int_if_digits(path_segment: str):
+                name, *_ = path_segment.split(".")
+                if name.isdigit():
+                    return f"{'0'*(max_name_len-len(name))}{name}"
+                return name.lower()
+
+            dirs.sort(key=int_if_digits)
+
             for dir_ in dirs:
                 sub_index.append(
                     create_sub_path_entry(pathlib.Path(subdir, dir_), is_dir=True)
                 )
+
+            files.sort(key=int_if_digits)
 
             for file in files:
                 if file == "index.html":
@@ -129,4 +142,10 @@ def generate_indices(path: pathlib.Path):
 
 
 if __name__ == "__main__":
-    generate_indices(pathlib.Path(__file__).parent.parent.joinpath("pages"))
+    # For debugging. Add files to /pages to test index creation.
+    # This sets the root path to the base of the directory, where in production
+    # this will be set to the GH Pages repo name.
+    generate_indices(
+        pathlib.Path(__file__).parent.parent.joinpath("pages"),
+        root_path=pathlib.Path("/"),
+    )
