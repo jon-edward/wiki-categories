@@ -16,6 +16,7 @@ import requests
 
 from process_categories import process_categories
 from gzip_buffer import read_buffered_gzip_remote
+from html_indices import generate_indices
 from parse import parse_category_links, parse_pages, split_lines
 
 
@@ -94,12 +95,19 @@ if __name__ == "__main__":
         action="store_true",
     )
 
+    parser.add_argument(
+        "--no-indices",
+        help="Do not generate index.html in each folder.",
+        action="store_true",
+    )
+
     args = parser.parse_args()
 
     lang: str = args.language
     dest: pathlib.Path = args.dest
     debug: bool = args.debug
     clean: bool = args.clean
+    no_indices: bool = args.no_indices
 
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -167,3 +175,6 @@ if __name__ == "__main__":
 
     with dest.joinpath("run_info.json").open("w") as f_info:
         json.dump(run_info, f_info, indent=1)
+
+    if not no_indices:
+        generate_indices(dest)
