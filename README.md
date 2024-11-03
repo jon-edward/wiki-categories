@@ -31,9 +31,8 @@ The fields of the binary file are as follows (in this order):
 2. predecessors - An array of unsigned 32-bit integers which lists the ids of categories having this category
   as a successor. 
 3. successors - An array of unsigned 32-bit integers which lists the ids of categories immediately following this 
-  category in the hierarchy. 
-4. articles - An array of unsigned 32-bit integers which lists the ids of articles which are members of 
-  this category.
+  category in the hierarchy. For example, the "Climate activists" category is a successor of "Climate".
+4. articles - An array of unsigned 32-bit integers which lists the ids of this category's articles.
 
 The script generates a `.index` file in the root directory and 
 each of its bins - this should be interpreted as an array 
