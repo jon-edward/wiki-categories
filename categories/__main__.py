@@ -21,7 +21,7 @@ from parse import parse_category_links, parse_pages, split_lines
 
 
 DEFAULT_DEST = pathlib.Path(__file__).parent.parent.joinpath("pages")
-GH_PAGES_URL = os.environ.get("GH_PAGES_URL", None)
+GH_PAGES_URL = os.environ.get("GH_PAGES_URL", "")
 
 
 def _is_redundant(
@@ -148,7 +148,7 @@ if __name__ == "__main__":
         "Last-Modified", None
     )
 
-    if GH_PAGES_URL is not None and _is_redundant(
+    if GH_PAGES_URL and _is_redundant(
         urllib.parse.urljoin(GH_PAGES_URL, "run_info.json"),
         category_links_modified,
         pages_modified,
