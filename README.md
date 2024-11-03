@@ -21,28 +21,19 @@ a given category's id divided by 2000. This balancing was
 chosen by observation of the English Wikipedia, which at the 
 time of writing has about 2 million unique categories.
 
-`.category` files are named by their page ids. The file type is 
-an easily parseable, compact binary format for storing a 
-category name, its neighbors, and its articles. 
+A `.category` file is a concatenation of fields, each field starts 
+with a 32-bit integer that describes how long the value is in bytes, 
+and is immediately followed by the value. The file is named by its page 
+id.
 
-The structure is described as follows:
-
-* (4 bytes, unsigned int32) `name_bytes_len`
-
-* utf-8 string of the category title, of total byte length 
-  `name_bytes_len`
-
-* (4 bytes, unsigned int32) `predecessors_bytes_len`
-
-* Unsigned int32 array of predecessor ids, of total byte length
-  `predecessors_bytes_len`
-
-* (4 bytes, unsigned int32) `successors_bytes_len`
-
-* Unsigned int32 array of successor ids, of total byte length 
-  `successors_bytes_len`
-
-* Unsigned int32 array of article ids, to EOF
+The fields of the binary file are as follows (in this order):
+1. name - A utf8-encoded name of the category. 
+2. predecessors - An array of unsigned 32-bit integers which lists the ids of categories having this category
+  as a successor. 
+3. successors - An array of unsigned 32-bit integers which lists the ids of categories immediately following this 
+  category in the hierarchy. 
+4. articles - An array of unsigned 32-bit integers which lists the ids of articles which are members of 
+  this category.
 
 The script generates a `.index` file in the root directory and 
 each of its bins - this should be interpreted as an array 

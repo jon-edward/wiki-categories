@@ -35,8 +35,14 @@ _BALANCING_MOD_OPERAND = 2_000
 _DATETIME_STRFTIME = "%m/%d/%Y, %H:%M:%S"
 
 
-def _to_uint32(val: Iterable[int]) -> bytes:
+def _to_uint32_bytes(val: Iterable[int]) -> bytes:
     return array(_UINT32_TYPECODE, val).tobytes()
+
+
+def _serialize_fields(*fields: bytes) -> bytes:
+    return b"".join(
+        len(x).to_bytes(length=4) + x for x in fields
+    )
 
 
 def _serialize_category(
@@ -47,17 +53,12 @@ def _serialize_category(
 ) -> bytes:
 
     name_bytes = name.encode()
-    predecessors_bytes = _to_uint32(predecessors)
-    successors_bytes = _to_uint32(successors)
+    predecessors_bytes = _to_uint32_bytes(predecessors)
+    successors_bytes = _to_uint32_bytes(successors)
+    articles_bytes = _to_uint32_bytes(articles)
 
-    return (
-        len(name_bytes).to_bytes(length=4)
-        + name_bytes
-        + len(predecessors_bytes).to_bytes(length=4)
-        + predecessors_bytes
-        + len(successors_bytes).to_bytes(length=4)
-        + successors_bytes
-        + _to_uint32(articles)
+    return _serialize_fields(
+        name_bytes, predecessors_bytes, successors_bytes, articles_bytes
     )
 
 
@@ -118,7 +119,7 @@ def process_categories(
 
     def push_article_list(category_id, _article_list, clear: bool = True):
         with articles_dir.joinpath(f"{category_id}.articles").open("ab") as f:
-            f.write(b"".join(a.to_bytes(length=4) for a in _article_list))
+            f.write(b"".join(article.to_bytes(length=4) for article in _article_list))
         if clear:
             _article_list.clear()
 
@@ -152,7 +153,7 @@ def process_categories(
     cat_graph = nx.DiGraph()
     cat_graph.add_edges_from(category_edges)
 
-    def read_article_list(category_id: int) -> array[int]:
+    def read_article_list(category_id: int) -> array:
         try:
             return array(
                 _UINT32_TYPECODE,
@@ -219,7 +220,7 @@ def process_categories(
             if not s.isdigit():
                 continue
             acc.append(int(s))
-        return _to_uint32(acc)
+        return _to_uint32_bytes(acc)
 
     dest.joinpath("dir_list.index").write_bytes(dir_list_content(dest))
 
