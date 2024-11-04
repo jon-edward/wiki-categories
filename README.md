@@ -34,6 +34,47 @@ The fields of the binary file are as follows (in this order):
   category in the hierarchy. For example, the "Climate activists" category is a successor of "Climate".
 4. articles - An array of unsigned 32-bit integers which lists the ids of this category's articles.
 
+The `.category` format can be easily deserialized using the following script:
+```py
+from dataclasses import dataclass
+import struct
+from typing import Iterable
+
+
+@dataclass
+class Category:
+  name: str
+  predecessors: Iterable[int]
+  successors: Iterable[int]
+  articles: Iterable[int]
+
+
+def uint32_from_bytes(data: bytes) -> Iterable[int]:
+  num_integers = len(data) // 4
+  return list(struct.unpack(f'>{num_integers}I', data))
+
+
+def deserialize(category_bytes: bytes) -> Category:
+  pos = 0
+  
+  def read(x: int) -> bytes:
+    nonlocal pos
+    output = category_bytes[pos:pos+x]
+    pos += x
+    return output
+  
+  def read_field() -> bytes:
+    value_len = int.from_bytes(read(4), "big")
+    return read(value_len)
+  
+  return Category(
+    read_field().decode("utf-8"),
+    uint32_from_bytes(read_field()),
+    uint32_from_bytes(read_field()),
+    uint32_from_bytes(read_field())
+  )
+```
+
 The script generates a `.index` file in the root directory and 
 each of its bins - this should be interpreted as an array 
 of unsigned 32-bit integers. This array describes the names of 
