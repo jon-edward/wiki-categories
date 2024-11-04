@@ -2,7 +2,6 @@
 Contains the main function entrypoint for categories.
 """
 
-from array import array
 from collections import defaultdict
 import dataclasses
 import datetime
@@ -10,6 +9,7 @@ import logging
 import os
 import pathlib
 import shutil
+import struct
 from textwrap import dedent
 from typing import (
     Callable,
@@ -29,14 +29,15 @@ from tqdm import tqdm
 from parse import CategoryLink, Page
 
 
-_UINT32_TYPECODE = "I"
 _BALANCING_MOD_OPERAND = 2_000
-
 _DATETIME_STRFTIME = "%m/%d/%Y, %H:%M:%S"
 
+def _uint32_from_bytes(b: bytes) -> List[int]:
+    num_integers = len(b) // 4
+    return list(struct.unpack(f'>{num_integers}I', b))
 
-def _to_uint32_bytes(val: Iterable[int]) -> bytes:
-    return array(_UINT32_TYPECODE, val).tobytes()
+def _bytes_from_uint32(val: Iterable[int]) -> bytes:
+    return b''.join(struct.pack('>I', v) for v in val)
 
 
 def _serialize_fields(*fields: bytes) -> bytes:
@@ -53,9 +54,9 @@ def _serialize_category(
 ) -> bytes:
 
     name_bytes = name.encode()
-    predecessors_bytes = _to_uint32_bytes(predecessors)
-    successors_bytes = _to_uint32_bytes(successors)
-    articles_bytes = _to_uint32_bytes(articles)
+    predecessors_bytes = _bytes_from_uint32(predecessors)
+    successors_bytes = _bytes_from_uint32(successors)
+    articles_bytes = _bytes_from_uint32(articles)
 
     return _serialize_fields(
         name_bytes, predecessors_bytes, successors_bytes, articles_bytes
@@ -153,14 +154,13 @@ def process_categories(
     cat_graph = nx.DiGraph()
     cat_graph.add_edges_from(category_edges)
 
-    def read_article_list(category_id: int) -> array:
+    def read_article_list(category_id: int) -> Iterable[int]:
         try:
-            return array(
-                _UINT32_TYPECODE,
+            return _uint32_from_bytes(
                 articles_dir.joinpath(f"{category_id}.articles").read_bytes(),
             )
         except FileNotFoundError:
-            return array(_UINT32_TYPECODE)
+            return []
 
     excluded_categories = set()
 
@@ -184,7 +184,7 @@ def process_categories(
                     Excluding %d articles.
                 """
             ),
-            (len(excluded_categories), len(excluded_articles)),
+            len(excluded_categories), len(excluded_articles)
         )
 
     if progress:
@@ -220,7 +220,7 @@ def process_categories(
             if not s.isdigit():
                 continue
             acc.append(int(s))
-        return _to_uint32_bytes(acc)
+        return _bytes_from_uint32(acc)
 
     dest.joinpath("dir_list.index").write_bytes(dir_list_content(dest))
 
@@ -249,7 +249,7 @@ def process_categories(
             Finished at %s 
         """
         ),
-        (categories_count, articles_count, finished.strftime(_DATETIME_STRFTIME)),
+        categories_count, articles_count, finished.strftime(_DATETIME_STRFTIME),
     )
 
     return CategoriesInfo(
