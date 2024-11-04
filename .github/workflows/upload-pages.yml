@@ -30,7 +30,7 @@ jobs:
           run: |
             export GH_PAGES_URL="https://jon-edward.github.io/wiki-categories/"
             
-            if [[ ${{ github.event_name == 'workflow_dispatch' }} == true && ${{ inputs.force }} == true ]]; then
+            if [[ ${{ github.event_name == 'workflow_dispatch' }} == true && ${{ inputs.force == true }} == true ]]; then
               unset GH_PAGES_URL
             fi
             
