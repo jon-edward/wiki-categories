@@ -1,12 +1,12 @@
 """
-Main CLI entrypoint for categories. See README.md or `python3 categories --help` for help.
+Main CLI entrypoint for categories. See README.md or `python3 categories --help` for usage.
 """
 
-import argparse
 import json
 import logging
 import os
 import pathlib
+from pprint import pprint
 import urllib.parse
 import shutil
 import sys
@@ -14,8 +14,9 @@ from typing import Optional
 
 import requests
 
+from config import parse_config
 from process_categories import process_categories
-from gzip_buffer import read_buffered_gzip_remote
+from gzip_buffer import read_buffered_gzip
 from html_indices import generate_indices
 from parse import parse_category_links, parse_pages, split_lines
 
@@ -58,113 +59,80 @@ def _is_redundant(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        "categories", description="Collect category information and output to folder."
-    )
+    args = parse_config()
+    pprint(args)
 
-    parser.add_argument("language", help="The wiki language to collect categories for.")
-
-    parser.add_argument(
-        "--dest",
-        help="The output folder for category information. Must be empty.",
-        type=pathlib.Path,
-        default=DEFAULT_DEST,
-    )
-
-    parser.add_argument(
-        "--excluded-parents",
-        help="Ids of categories to exclude children from.",
-        type=int,
-        nargs="*",
-    )
-
-    parser.add_argument(
-        "--excluded-article-categories",
-        help="Ids of categories to exclude articles from.",
-        type=int,
-        nargs="*",
-    )
-
-    parser.add_argument(
-        "--debug", help="Show progress and debug information.", action="store_true"
-    )
-
-    parser.add_argument(
-        "--clean",
-        help="Clean output folder before starting if the folder isn't empty.",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "--no-indices",
-        help="Do not generate index.html in each folder.",
-        action="store_true",
-    )
-
-    args = parser.parse_args()
-
-    lang: str = args.language
-    dest: pathlib.Path = args.dest
-    debug: bool = args.debug
-    clean: bool = args.clean
-    no_indices: bool = args.no_indices
-
-    if debug:
+    if args.dev:
         logging.getLogger().setLevel(logging.DEBUG)
-    else:
-        logging.getLogger().setLevel(logging.INFO)
 
-    excluded_parents = args.excluded_parents
-    excluded_article_categories = args.excluded_article_categories
+    if args.clean and args.dest.exists():
+        shutil.rmtree(args.dest)
 
-    if clean and dest.exists():
-        shutil.rmtree(dest)
-
-    os.makedirs(dest, exist_ok=True)
-    assert clean or not os.listdir(dest), f"The output folder {dest} is not empty."
+    os.makedirs(args.dest, exist_ok=True)
+    assert not os.listdir(args.dest), f"The output folder {args.dest} is not empty. Either delete its contents or use --clean to remove it."
 
     category_links_url = (
-        f"https://dumps.wikimedia.org/{lang}wiki/"
-        f"latest/{lang}wiki-latest-categorylinks.sql.gz"
+        f"https://dumps.wikimedia.org/{args.language}wiki/"
+        f"latest/{args.language}wiki-latest-categorylinks.sql.gz"
     )
     pages_url = (
-        f"https://dumps.wikimedia.org/{lang}wiki/latest/{lang}wiki-latest-page.sql.gz"
+        f"https://dumps.wikimedia.org/{args.language}wiki/latest/{args.language}wiki-latest-page.sql.gz"
     )
+
+    # For local development, so that you can test without downloading the dumps every run
+    # Make sure to decompress the dump files first
+    if args.use_cache:
+        cache_dir = pathlib.Path("data_cache")
+        cached_category_links = cache_dir.joinpath(f"{args.language}wiki-latest-categorylinks.sql")
+        
+        if cached_category_links.exists():
+            category_links_url = cached_category_links
+            logging.info(
+                f"Using cached category links from {category_links_url}"
+            )
+        
+        cached_pages = cache_dir.joinpath(f"{args.language}wiki-latest-page.sql")
+        
+        if cached_pages.exists():
+            pages_url = cached_pages
+            logging.info(
+                f"Using cached pages from {pages_url}"
+            )
+        
+        category_links_modified = None
+        pages_modified = None
+    else:
+        category_links_modified = requests.head(category_links_url, timeout=10).headers.get(
+            "Last-Modified", None
+        )
+        pages_modified = requests.head(pages_url, timeout=10).headers.get(
+            "Last-Modified", None
+        )
+
+        if GH_PAGES_URL and _is_redundant(
+            urllib.parse.urljoin(GH_PAGES_URL, "run_info.json"),
+            category_links_modified,
+            pages_modified,
+        ):
+            logging.info(
+                "Run is redundant, all Wiki data dump assets are up to date. Exiting."
+            )
+            sys.exit(0)
 
     def _gen_category_links():
         return parse_category_links(
-            split_lines(read_buffered_gzip_remote(category_links_url, progress=debug))
+            split_lines(read_buffered_gzip(category_links_url, progress=args.dev))
         )
 
     def _gen_pages():
         return parse_pages(
-            split_lines(read_buffered_gzip_remote(pages_url, progress=debug))
+            split_lines(read_buffered_gzip(pages_url, progress=args.dev))
         )
-
-    category_links_modified = requests.head(category_links_url, timeout=10).headers.get(
-        "Last-Modified", None
-    )
-    pages_modified = requests.head(pages_url, timeout=10).headers.get(
-        "Last-Modified", None
-    )
-
-    if GH_PAGES_URL and _is_redundant(
-        urllib.parse.urljoin(GH_PAGES_URL, "run_info.json"),
-        category_links_modified,
-        pages_modified,
-    ):
-        logging.info(
-            "Run is redundant, all Wiki data dump assets are up to date. Exiting."
-        )
-        sys.exit(0)
 
     categories_info = process_categories(
-        dest,
+        args,
         _gen_category_links,
         _gen_pages,
-        excluded_parents=excluded_parents,
-        excluded_article_categories=excluded_article_categories,
-        progress=debug,
     )
 
     run_info = {
@@ -173,8 +141,8 @@ if __name__ == "__main__":
         **categories_info.to_json(),
     }
 
-    with dest.joinpath("run_info.json").open("w") as f_info:
+    with args.dest.joinpath("run_info.json").open("w") as f_info:
         json.dump(run_info, f_info, indent=1)
 
-    if not no_indices:
-        generate_indices(dest)
+    if not args.no_indices:
+        generate_indices(args.dest, args.index_root_path)

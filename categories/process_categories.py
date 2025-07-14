@@ -2,39 +2,32 @@
 Contains the main function entrypoint for categories.
 """
 
+from array import array
 from collections import defaultdict
 import dataclasses
 import datetime
+from itertools import chain
 import logging
 import os
 import pathlib
-import shutil
+import pickle
+import random
 import struct
-from textwrap import dedent
 from typing import (
     Callable,
-    Dict,
     DefaultDict,
     Iterable,
-    List,
-    Optional,
-    Set,
-    Tuple,
     Union,
 )
 
 import networkx as nx
+import numpy as np
 from tqdm import tqdm
 
+from config import RunConfig
 from parse import CategoryLink, Page
 
-
-_BALANCING_MOD_OPERAND = 2_000
 _DATETIME_STRFTIME = "%m/%d/%Y, %H:%M:%S"
-
-def _uint32_from_bytes(b: bytes) -> List[int]:
-    num_integers = len(b) // 4
-    return list(struct.unpack(f'>{num_integers}I', b))
 
 def _bytes_from_uint32(val: Iterable[int]) -> bytes:
     return b''.join(struct.pack('>I', v) for v in val)
@@ -51,15 +44,27 @@ def _serialize_category(
     predecessors: Iterable[int],
     successors: Iterable[int],
     articles: Iterable[int],
+    article_names: Iterable[str]
 ) -> bytes:
-
+    """
+    Serialize a category into a compact binary format.
+    The format is:
+    - name: string
+    - predecessors: list of predecessor category IDs (uint32)
+    - successors: list of successor category IDs (uint32)
+    - articles: list of article IDs (uint32)
+    - article_names: list of article names (string, null-terminated)
+    """
     name_bytes = name.encode()
     predecessors_bytes = _bytes_from_uint32(predecessors)
     successors_bytes = _bytes_from_uint32(successors)
     articles_bytes = _bytes_from_uint32(articles)
+    articles_names_bytes = b"".join(
+        name.encode() + b"\0" for name in article_names
+    )
 
     return _serialize_fields(
-        name_bytes, predecessors_bytes, successors_bytes, articles_bytes
+        name_bytes, predecessors_bytes, successors_bytes, articles_bytes, articles_names_bytes
     )
 
 
@@ -72,8 +77,9 @@ class CategoriesInfo:
     categories_count: int
     articles_count: int
     finished: datetime.datetime
+    balancing_mod_operand: int
 
-    def to_json(self) -> Dict[str, Union[str, int]]:
+    def to_json(self) -> dict[str, Union[str, int]]:
         """
         Makes run information safe for use in a JSON file.
         """
@@ -82,136 +88,211 @@ class CategoriesInfo:
             "categoriesCount": self.categories_count,
             "articlesCount": self.articles_count,
             "finished": self.finished.strftime(_DATETIME_STRFTIME),
+            "balancingModOperand": self.balancing_mod_operand,
         }
 
+# The following array and default dict functions are defined to allow for 
+# pickling of the _CategoryTreeData dataclass.
+#
+# Lambda functions cannot be pickled
 
-def process_categories(
-    dest: pathlib.Path,
+def _array_L():
+    """
+    Create an array of type 'L' (unsigned long).
+    """
+    return array('L')
+
+def _default_dict_L():
+    """
+    Create a default dictionary with array of type 'L' as default factory.
+    """
+    return defaultdict(_array_L)
+
+@dataclasses.dataclass
+class _CategoryTreeData:
+    article_id_to_name: dict[int, str] = dataclasses.field(default_factory=dict)
+    category_id_to_name: dict[int, str] = dataclasses.field(default_factory=dict)
+    category_edges: list[tuple[int, int]] = dataclasses.field(default_factory=list)
+    category_to_articles: DefaultDict[int, array] = dataclasses.field(default_factory=_default_dict_L)
+
+
+def _get_category_tree_data(
     category_links_gen: Callable[[], Iterable[CategoryLink]],
-    pages_gen: Callable[[], Iterable[Page]],
-    excluded_parents: Optional[Iterable[int]] = None,
-    excluded_article_categories: Optional[Iterable[int]] = None,
-    progress: bool = True,
-) -> CategoriesInfo:
+    pages_gen: Callable[[], Iterable[Page]]) -> _CategoryTreeData:
     """
-    Main function of categories and used in CLI. See README.md for behavior.
+    Generate category tree data from generators.
     """
-
-    if excluded_parents is None:
-        excluded_parents = ()
-
-    if excluded_article_categories is None:
-        excluded_article_categories = ()
-
-    articles_dir = dest.joinpath("articles")
-    os.makedirs(articles_dir, exist_ok=True)
-
-    id_to_name: Dict[int, str] = {}
-
+    data = _CategoryTreeData()
     for page in pages_gen():
-        id_to_name[page.page_id] = page.name
+        if page.is_article:
+            data.article_id_to_name[page.page_id] = page.name
+        else:
+            data.category_id_to_name[page.page_id] = page.name
+    
+    name_to_id = {v: k for k, v in data.category_id_to_name.items()}
 
-    name_to_id = {v: k for k, v in id_to_name.items()}
-
-    category_edges: List[Tuple[int, int]] = []
-
-    article_acc: DefaultDict[int, List[int]] = defaultdict(list)
-    max_items = 100
-
-    def push_article_list(category_id, _article_list, clear: bool = True):
-        with articles_dir.joinpath(f"{category_id}.articles").open("ab") as f:
-            f.write(b"".join(article.to_bytes(length=4) for article in _article_list))
-        if clear:
-            _article_list.clear()
-
-    def append_id(category_id: int, article_id: int):
-        _article_list = article_acc[category_id]
-        _article_list.append(article_id)
-
-        if len(_article_list) > max_items:
-            push_article_list(category_id, _article_list)
-
-    for category_link in category_links_gen():
-        parent_id = name_to_id.get(category_link.parent_name, None)
+    for link in category_links_gen():
+        parent_id = name_to_id.get(link.parent_name, None)
 
         if parent_id is None:
             continue
 
-        if category_link.is_article:
-            append_id(parent_id, category_link.child_id)
-        elif category_link.child_id in id_to_name:
-            category_edges.append((parent_id, category_link.child_id))
+        if link.is_article:
+            article_name = data.article_id_to_name.get(link.child_id, None)
+            if article_name is None:
+                continue
+            data.category_to_articles[parent_id].append(link.child_id)
+        elif link.child_id in data.category_id_to_name:
+            data.category_edges.append((parent_id, link.child_id))
+    
+    return data
 
-    del name_to_id
 
-    for k, article_list in article_acc.items():
-        if not article_list:
-            continue
-        push_article_list(k, article_list, clear=False)
+def process_categories(
+    config: RunConfig,
+    category_links_gen: Callable[[], Iterable[CategoryLink]],
+    pages_gen: Callable[[], Iterable[Page]],
+) -> CategoriesInfo:
+    """
+    Main function of categories.
+    """
 
-    del article_acc
+    if config.use_cache:
+        category_tree_cached = pathlib.Path("data_cache/_cached_category_tree_data.pickle")
+        if not os.path.exists(category_tree_cached):
+            data = _get_category_tree_data(category_links_gen, pages_gen)
+            with open(category_tree_cached, "wb") as f:
+                pickle.dump(data, f)
+                logging.debug("Cached category tree data to %s", category_tree_cached)
+        else:
+            with open(category_tree_cached, "rb") as f:
+                data: _CategoryTreeData = pickle.load(f)
+                logging.debug("Loaded cached category tree data from %s", category_tree_cached)
+    else:
+        data = _get_category_tree_data(category_links_gen, pages_gen)
 
     cat_graph = nx.DiGraph()
-    cat_graph.add_edges_from(category_edges)
+    cat_graph.add_edges_from(data.category_edges)
 
-    def read_article_list(category_id: int) -> Iterable[int]:
-        try:
-            return _uint32_from_bytes(
-                articles_dir.joinpath(f"{category_id}.articles").read_bytes(),
-            )
-        except FileNotFoundError:
-            return []
+    excluded_categories = set(chain(
+        config.excluded_parents,
+        config.excluded_grandparents,
+        config.excluded_article_categories,
+    ))
 
-    excluded_categories = set()
+    for e in config.excluded_parents:
+        if e not in cat_graph:
+            continue
 
-    for e in excluded_parents:
         excluded_categories.update(cat_graph.successors(e))
+
+    for id_ in config.excluded_grandparents:
+        if id_ not in cat_graph:
+            continue
+
+        for child in cat_graph.successors(id_):
+            excluded_categories.add(child)
+            excluded_categories.update(cat_graph.successors(child))
 
     excluded_articles = set()
 
-    for a in excluded_article_categories:
-        excluded_articles.update(read_article_list(a))
+    for a in config.excluded_article_categories:
+        excluded_articles.update(data.category_to_articles[a])
 
-    cat_graph.remove_nodes_from(excluded_categories)
+    if excluded_categories:
+        cat_graph.remove_nodes_from(excluded_categories)
 
-    p_bar = None
+    def get_safe_categories(G: nx.DiGraph) -> set[int]:
+        """
+        Get categories that are safe to keep based on the safe depth.
+        """
+        return set(nx.dfs_tree(G, config.root_node, depth_limit=config.safe_depth).nodes())
 
-    if excluded_articles or excluded_categories:
+    def remove_contents_inaccessible(G: nx.DiGraph) -> None:
+        """
+        Remove nodes that are not accessible from the root node.
+        """
+        accessible = set(nx.dfs_tree(G, config.root_node).nodes())
+        inaccessible = set(G.nodes()) - accessible
+        if inaccessible:
+            logging.debug(
+                "Removing %d inaccessible categories from the graph.",
+                len(inaccessible)
+            )
+            G.remove_nodes_from(inaccessible)
+
+    def get_article_count_percentile(G: nx.DiGraph) -> int:
+        """
+        Get the article count percentile for the categories in the graph.
+        """
+        article_counts = [len(data.category_to_articles[n]) for n in G.nodes()]
+        return int(np.percentile(article_counts, config.article_count_percentile))
+
+    safe_categories = get_safe_categories(cat_graph)
+
+    logging.debug("Safe categories: %d", len(safe_categories))
+
+    min_article_count = get_article_count_percentile(cat_graph) + 1
+
+    small_categories = set(
+        n for n in cat_graph.nodes() if 
+        len(data.category_to_articles[n]) < min_article_count and n not in safe_categories
+    )
+
+    if small_categories:
         logging.debug(
-            dedent(
-                """
-                    Excluding %d categories.
-                    Excluding %d articles.
-                """
-            ),
-            len(excluded_categories), len(excluded_articles)
+            "Removing %d small categories that are not safe. These categories have less than %d articles.",
+            len(small_categories), min_article_count
+        )
+        cat_graph.remove_nodes_from(small_categories)
+    
+    remove_contents_inaccessible(cat_graph)
+
+    if excluded_categories:
+        logging.debug(
+            "Excluding %d categories that were specified in the config.",
+            len(excluded_categories)
+        )
+    
+    if excluded_articles:
+        logging.debug(
+            "Excluding %d articles that were specified in the config.",
+            len(excluded_articles)
         )
 
-    if progress:
-        p_bar = tqdm(total=len(cat_graph))
+    added_articles = set()
 
-    added_articles: Set[int] = set()
+    for balancing_idx in range(config.balancing_mod_operand):
+        category_chunk_dir = config.dest.joinpath(str(balancing_idx))
+        category_chunk_dir.mkdir()
 
-    for category in cat_graph:
-
-        name = id_to_name[category]
+    for category in tqdm(cat_graph, disable=not config.dev, desc="Processing categories"):
+        name = data.category_id_to_name[category]
         predecessors = cat_graph.predecessors(category)
         successors = cat_graph.successors(category)
 
-        category_chunk_dir = dest.joinpath(str(category % _BALANCING_MOD_OPERAND))
-        category_chunk_dir.mkdir(exist_ok=True)
+        category_chunk_dir = config.dest.joinpath(str(category % config.balancing_mod_operand))
 
         articles = [
-            a for a in read_article_list(category) if a not in excluded_articles
+            a for a in data.category_to_articles[category] if a not in excluded_articles and a in data.article_id_to_name
         ]
+
+        if len(articles) > config.max_articles_per_category and config.max_articles_per_category != -1:
+            articles = random.sample(articles, config.max_articles_per_category)
+        
         added_articles.update(articles)
 
-        category_chunk_dir.joinpath(f"{category}.category").write_bytes(
-            _serialize_category(name, predecessors, successors, articles)
-        )
-
-        if p_bar is not None:
-            p_bar.update(1)
+        with open(
+            category_chunk_dir.joinpath(f"{category}.category"), "wb"
+        ) as f:
+            article_names = [data.article_id_to_name[a] for a in articles]
+            f.write(_serialize_category(
+                name,
+                predecessors,
+                successors,
+                articles,
+                article_names,
+            ))
 
     def dir_list_content(path: pathlib.Path) -> bytes:
         acc = []
@@ -222,38 +303,27 @@ def process_categories(
             acc.append(int(s))
         return _bytes_from_uint32(acc)
 
-    dest.joinpath("dir_list.index").write_bytes(dir_list_content(dest))
+    config.dest.joinpath("dir_list.index").write_bytes(dir_list_content(config.dest))
 
-    for container in os.listdir(dest):
-        container_path = dest.joinpath(container)
+    for container in os.listdir(config.dest):
+        container_path = config.dest.joinpath(container)
         if not container_path.is_dir():
             continue
         container_path.joinpath("dir_list.index").write_bytes(
             dir_list_content(container_path)
         )
 
-    if p_bar is not None:
-        p_bar.close()
-
-    shutil.rmtree(articles_dir)
-
     categories_count = len(cat_graph)
     articles_count = len(added_articles)
     finished = datetime.datetime.now()
 
-    logging.debug(
-        dedent(
-            """
-            %d total categories
-            %d total articles
-            Finished at %s 
-        """
-        ),
-        categories_count, articles_count, finished.strftime(_DATETIME_STRFTIME),
-    )
+    logging.debug("%d total categories", categories_count)
+    logging.debug("%d total articles", articles_count)
+    logging.debug("Finished at %s", finished.strftime(_DATETIME_STRFTIME))
 
     return CategoriesInfo(
         categories_count=categories_count,
         articles_count=articles_count,
         finished=finished,
+        balancing_mod_operand=config.balancing_mod_operand,
     )

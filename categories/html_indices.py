@@ -59,7 +59,7 @@ INDEX_HTML = """
 """
 
 
-def generate_indices(path: pathlib.Path, root_path=pathlib.Path("/wiki-categories/")):
+def generate_indices(path: pathlib.Path, root_path: str):
     """
     Generate an index.html file at each subdirectory and root of path directory that lists
     files for navigation.
@@ -67,32 +67,33 @@ def generate_indices(path: pathlib.Path, root_path=pathlib.Path("/wiki-categorie
     for subdir, dirs, files in os.walk(path):
         with open(
             pathlib.Path(subdir, "index.html"),
-            "wb",
+            "w",
+            encoding="utf-8",
         ) as f:
             index = bs4.BeautifulSoup(INDEX_HTML, "html.parser")
 
             sub_index = index.find(id="sub-index")
+            if not isinstance(sub_index, bs4.element.Tag):
+                raise ValueError("Index HTML template is missing the 'sub-index' element.")
 
             def format_dir(relative_d: pathlib.Path) -> str:
                 return f"/{relative_d}/" if str(relative_d) != "." else "root"
 
             def create_sub_path_entry(
-                sub_path: pathlib.Path, display_text: str = None, is_dir: bool = False
+                sub_path: pathlib.Path, display_text: str | None = None, is_dir: bool = False
             ):
-                p = root_path.joinpath(sub_path.relative_to(path))
+                href_content = os.path.join(root_path, sub_path.relative_to(path))
 
                 li_tag = index.new_tag("li")
                 li_tag.attrs["class"] = "is-dir" if is_dir else "is-file"
                 a_tag = index.new_tag("a")
-
-                href_content = str(p)
 
                 a_tag.attrs["href"] = href_content + (
                     "/" if is_dir and href_content != "/" else ""
                 )
 
                 if display_text is None:
-                    a_tag.append(p.name + ("/" if is_dir else ""))
+                    a_tag.append(href_content + ("/" if is_dir else ""))
                 else:
                     a_tag.append(display_text)
 
@@ -102,7 +103,7 @@ def generate_indices(path: pathlib.Path, root_path=pathlib.Path("/wiki-categorie
 
             relative_path = format_dir(pathlib.Path(subdir).relative_to(path))
 
-            index.find(id="sub-path").append(f"Directory listing for {relative_path}:")
+            sub_index.append(f"Directory listing for {relative_path}:")
 
             try:
                 head_entry = create_sub_path_entry(
@@ -137,8 +138,11 @@ def generate_indices(path: pathlib.Path, root_path=pathlib.Path("/wiki-categorie
                     continue
 
                 sub_index.append(create_sub_path_entry(pathlib.Path(subdir, file)))
-
-            f.write(index.prettify(encoding="utf-8"))
+            
+            content: str = index.prettify(encoding="utf-8") # type: ignore[return-value]
+            if isinstance(content, bytes):
+                content = content.decode("utf-8")
+            f.write(content)
 
 
 if __name__ == "__main__":
@@ -147,5 +151,5 @@ if __name__ == "__main__":
     # this will be set to the GH Pages repo name.
     generate_indices(
         pathlib.Path(__file__).parent.parent.joinpath("pages"),
-        root_path=pathlib.Path("/"),
+        root_path="/"
     )

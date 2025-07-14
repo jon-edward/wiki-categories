@@ -32,6 +32,7 @@ class Page:
 
     page_id: int
     name: str
+    is_article: bool
 
 
 def split_lines(buffered_content: Iterable[bytes]) -> Iterable[bytes]:
@@ -59,7 +60,7 @@ def parse_category_links(lines: Iterable[bytes]) -> Iterable[CategoryLink]:
     """
 
     pattern: re.Pattern = re.compile(
-        rf"\(({_INTEGER_VALUE}),({_STRING_VALUE}),(?:{_STRING_VALUE},){{4}}'(subcat|page)'\)"
+        rf"\(({_INTEGER_VALUE}),({_STRING_VALUE}),(?:{_STRING_VALUE},){{4}}'(subcat|page)',{_INTEGER_VALUE},{_INTEGER_VALUE}\)"
     )
 
     for line in lines:
@@ -81,7 +82,7 @@ def parse_pages(lines: Iterable[bytes]) -> Iterable[Page]:
     """
 
     pattern: re.Pattern = re.compile(
-        rf"\(({_INTEGER_VALUE}),14,"
+        rf"\(({_INTEGER_VALUE}),(14|0),"
         rf"({_STRING_VALUE}),{_INTEGER_VALUE},"
         rf"{_INTEGER_VALUE},{_FLOAT_VALUE},"
         rf"{_STRING_VALUE},{_STRING_VALUE},"
@@ -93,5 +94,5 @@ def parse_pages(lines: Iterable[bytes]) -> Iterable[Page]:
         line_str = line.decode("utf-8", errors="ignore")
 
         for hit in re.findall(pattern, line_str):
-            page_id_str, unescaped_name = hit
-            yield Page(int(page_id_str), ast.literal_eval(unescaped_name))
+            page_id_str, ns, unescaped_name = hit
+            yield Page(int(page_id_str), ast.literal_eval(unescaped_name), ns == "0")
