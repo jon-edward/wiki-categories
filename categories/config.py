@@ -9,8 +9,6 @@ from typing import Sequence
 
 import argparse_dataclass
 
-argparse_dataclass.ArgsType
-
 @dataclass
 class RunConfig:
     language: str = "en"
