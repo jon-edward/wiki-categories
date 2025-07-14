@@ -30,27 +30,25 @@ def read_buffered_gzip_remote(
     Read chunks of a gzipped remote asset by url.
     """
 
-    response = requests.get(url, stream=True, timeout=10)
-
+    response = _get_remote_response(url)
     stream = response.iter_content(chunk_size=chunk_size)
-    dc_obj = zlib.decompressobj(wbits=zlib.MAX_WBITS | 16)
-
-    stream_len = int(response.headers.get("Content-Length", -1))
-
-    p_bar = tqdm(total=stream_len, unit="B", unit_scale=True, unit_divisor=1024, disable=not progress)
-
+    dc_obj = _get_gzip_decompressor()
+    stream_len = _get_stream_length(response)
+    p_bar = _create_progress_bar(stream_len, progress)
     for chunk in stream:
         yield dc_obj.decompress(chunk)
         p_bar.update(len(chunk))
-    
     p_bar.close()
+
 
 class _IdentityDecompressor:
     """
     A decompressor that does not decompress data.
     """
+
     def decompress(self, data: bytes) -> bytes:
         return data
+
 
 def read_buffered_gzip_local(
     path: pathlib.Path, chunk_size: int = 1024, progress: bool = True
@@ -59,19 +57,40 @@ def read_buffered_gzip_local(
     Read chunks of a gzipped local asset by path.
     """
 
-    if not path.suffix == ".gz":
-        # Not a gzipped file, return the data as is
-        dc_obj = _IdentityDecompressor()
-    else:
-        dc_obj = zlib.decompressobj(wbits=zlib.MAX_WBITS | 16)
-
-    p_bar = tqdm(
-        total=path.lstat().st_size, unit="B", unit_scale=True, unit_divisor=1024, disable=not progress
-    )
-
+    dc_obj = _get_local_decompressor(path)
+    p_bar = _create_progress_bar(path.lstat().st_size, progress)
     with path.open("rb") as f:
         while chunk := f.read(chunk_size):
             yield dc_obj.decompress(chunk)
             p_bar.update(len(chunk))
-
     p_bar.close()
+
+
+def _get_remote_response(url: str) -> requests.Response:
+    return requests.get(url, stream=True, timeout=10)
+
+
+def _get_gzip_decompressor():
+    return zlib.decompressobj(wbits=zlib.MAX_WBITS | 16)
+
+
+def _get_stream_length(response: requests.Response) -> int:
+    return int(response.headers.get("Content-Length", -1))
+
+
+def _create_progress_bar(total: int, progress: bool) -> tqdm:
+    return tqdm(
+        total=total,
+        unit="B",
+        unit_scale=True,
+        unit_divisor=1024,
+        disable=not progress,
+    )
+
+
+def _get_local_decompressor(
+    path: pathlib.Path,
+):
+    if not path.suffix == ".gz":
+        return _IdentityDecompressor()
+    return zlib.decompressobj(wbits=zlib.MAX_WBITS | 16)

@@ -59,97 +59,142 @@ INDEX_HTML = """
 """
 
 
-def generate_indices(path: pathlib.Path, root_path: str):
+def generate_indices(path: pathlib.Path, root_path: str) -> None:
     """
-    Generate an index.html file at each subdirectory and root of path directory that lists
-    files for navigation.
+    Generate an index.html file at each subdirectory and root of path directory that lists files for navigation.
     """
     for subdir, dirs, files in os.walk(path):
-        with open(
-            pathlib.Path(subdir, "index.html"),
-            "w",
-            encoding="utf-8",
-        ) as f:
-            index = bs4.BeautifulSoup(INDEX_HTML, "html.parser")
+        _write_index_html(subdir, dirs, files, path, root_path)
 
-            sub_index = index.find(id="sub-index")
-            if not isinstance(sub_index, bs4.element.Tag):
-                raise ValueError("Index HTML template is missing the 'sub-index' element.")
 
-            def format_dir(relative_d: pathlib.Path) -> str:
-                return f"/{relative_d}/" if str(relative_d) != "." else "root"
+def _write_index_html(
+    subdir: str, dirs: list[str], files: list[str], path: pathlib.Path, root_path: str
+) -> None:
+    with open(pathlib.Path(subdir, "index.html"), "w", encoding="utf-8") as f:
+        index = bs4.BeautifulSoup(INDEX_HTML, "html.parser")
+        sub_index = _get_sub_index_tag(index)
 
-            def create_sub_path_entry(
-                sub_path: pathlib.Path, display_text: str | None = None, is_dir: bool = False
-            ):
-                href_content = os.path.join(root_path, sub_path.relative_to(path))
+        relative_path = _format_dir(pathlib.Path(subdir).relative_to(path))
+        sub_index.append(f"Directory listing for {relative_path}:")
 
-                li_tag = index.new_tag("li")
-                li_tag.attrs["class"] = "is-dir" if is_dir else "is-file"
-                a_tag = index.new_tag("a")
+        _add_head_entry(sub_index, index, subdir, path, root_path)
 
-                a_tag.attrs["href"] = href_content + (
-                    "/" if is_dir and href_content != "/" else ""
+        max_name_len = _get_max_name_len(files, dirs)
+
+        dirs.sort(key=lambda x: _int_if_digits(x, max_name_len))
+
+        for dir_ in dirs:
+            sub_index.append(
+                _create_sub_path_entry(
+                    index, pathlib.Path(subdir, dir_), path, root_path, is_dir=True
                 )
-
-                if display_text is None:
-                    a_tag.append(href_content + ("/" if is_dir else ""))
-                else:
-                    a_tag.append(display_text)
-
-                li_tag.append(a_tag)
-
-                return li_tag
-
-            relative_path = format_dir(pathlib.Path(subdir).relative_to(path))
-
-            sub_index.append(f"Directory listing for {relative_path}:")
-
-            try:
-                head_entry = create_sub_path_entry(
-                    pathlib.Path(subdir).parent, display_text="..", is_dir=True
-                )
-                head_entry.attrs["class"] += " is-head-dir"
-                sub_index.append(head_entry)
-            except ValueError:
-                pass
-
-            max_name_len = max(
-                len(x.split(".")[0]) for x in itertools.chain(files, dirs)
             )
 
-            def int_if_digits(path_segment: str):
-                name, *_ = path_segment.split(".")
-                if name.isdigit():
-                    return f"{'0'*(max_name_len-len(name))}{name}"
-                return name.lower()
+        files.sort(key=lambda x: _int_if_digits(x, max_name_len))
 
-            dirs.sort(key=int_if_digits)
-
-            for dir_ in dirs:
-                sub_index.append(
-                    create_sub_path_entry(pathlib.Path(subdir, dir_), is_dir=True)
+        for file in files:
+            if file == "index.html":
+                continue
+            sub_index.append(
+                _create_sub_path_entry(
+                    index, pathlib.Path(subdir, file), path, root_path, is_dir=False
                 )
+            )
 
-            files.sort(key=int_if_digits)
+        content: str = index.prettify(encoding="utf-8")  # type: ignore[return-value]
 
-            for file in files:
-                if file == "index.html":
-                    continue
+        if isinstance(content, bytes):
+            content = content.decode("utf-8")
 
-                sub_index.append(create_sub_path_entry(pathlib.Path(subdir, file)))
-            
-            content: str = index.prettify(encoding="utf-8") # type: ignore[return-value]
-            if isinstance(content, bytes):
-                content = content.decode("utf-8")
-            f.write(content)
+        f.write(content)
+
+
+def _get_sub_index_tag(index: bs4.BeautifulSoup) -> bs4.element.Tag:
+    sub_index = index.find(id="sub-index")
+    if not isinstance(sub_index, bs4.element.Tag):
+        raise ValueError("Index HTML template is missing the 'sub-index' element.")
+    return sub_index
+
+
+def _format_dir(relative_d: pathlib.Path) -> str:
+    return f"/{relative_d}/" if str(relative_d) != "." else "root"
+
+
+def _add_head_entry(
+    sub_index: bs4.element.Tag,
+    index: bs4.BeautifulSoup,
+    subdir: str,
+    path: pathlib.Path,
+    root_path: str,
+) -> None:
+    try:
+        head_entry = _create_sub_path_entry(
+            index,
+            pathlib.Path(subdir).parent,
+            path,
+            root_path,
+            display_text="..",
+            is_dir=True,
+        )
+        head_entry.attrs["class"] += " is-head-dir"
+        sub_index.append(head_entry)
+    except ValueError:
+        pass
+
+
+def _get_max_name_len(files: list[str], dirs: list[str]) -> int:
+    return (
+        max(len(x.split(".")[0]) for x in itertools.chain(files, dirs))
+        if files or dirs
+        else 0
+    )
+
+
+def _int_if_digits(path_segment: str, max_name_len: int) -> str:
+    name, *_ = path_segment.split(".")
+    if name.isdigit():
+        return f"{'0'*(max_name_len-len(name))}{name}"
+    return name.lower()
+
+
+def _create_sub_path_entry(
+    index: bs4.BeautifulSoup,
+    sub_path: pathlib.Path,
+    path: pathlib.Path,
+    root_path: str,
+    display_text: str | None = None,
+    is_dir: bool = False,
+) -> bs4.element.Tag:
+    href_content = os.path.join(root_path, sub_path.relative_to(path))
+
+    li_tag = index.new_tag("li")
+    li_tag.attrs["class"] = "is-dir" if is_dir else "is-file"
+
+    a_tag = index.new_tag("a")
+    a_tag.attrs["href"] = href_content + (
+        os.path.sep if is_dir and href_content != os.path.sep else ""
+    )
+
+    if display_text is None:
+        a_tag.append(href_content + (os.path.sep if is_dir else ""))
+    else:
+        a_tag.append(display_text)
+
+    li_tag.append(a_tag)
+    return li_tag
 
 
 if __name__ == "__main__":
-    # For debugging. Add files to /pages to test index creation.
-    # This sets the root path to the base of the directory, where in production
-    # this will be set to the GH Pages repo name.
-    generate_indices(
-        pathlib.Path(__file__).parent.parent.joinpath("pages"),
-        root_path="/"
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate HTML indices for directories.")
+    parser.add_argument("path", type=pathlib.Path, help="Path to the directory to index.")
+    parser.add_argument(
+        "--root-path",
+        type=str,
+        default=os.path.sep,
+        help="Root path for the HTML indices.",
     )
+    args = parser.parse_args()
+
+    generate_indices(args.path, args.root_path)
