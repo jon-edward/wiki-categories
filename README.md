@@ -55,7 +55,7 @@ class Category:
 
 def uint32_from_bytes(data: bytes) -> list[int]:
   num_integers = len(data) // 4
-  return list(struct.unpack(f'>{num_integers}I', data))
+  return list(struct.unpack(f'<{num_integers}I', data))
 
 def str_list_from_bytes(data: bytes) -> list[str]:
   return [s.decode("utf-8") for s in data.split(b"\0")]
