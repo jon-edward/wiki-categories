@@ -1,200 +1,215 @@
-import itertools
 import os
 import pathlib
+import re
+import textwrap
 
-import bs4
 
-INDEX_HTML = """
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <style>
-    :root {
-      background-color:#fff;
-      color:#333;
-      font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,Cantarell,Open Sans,Helvetica Neue,sans-serif;
-      font-size:medium
+_category_parsing_script = r"""
+// Category parsing functionality
+
+function getUnsignedInt32(buffer, offset) {
+    // Category IDs are served in big-endian format
+    const view = new DataView(buffer, offset, 4);
+    return view.getUint32(true);
+}
+
+function getUnsignedInt32Array(buffer, offset, length) {
+    const output = new Uint32Array(length / 4);
+    for (let i = 0; i < length; i += 4) {
+        output[i / 4] = getUnsignedInt32(buffer, offset + i);
     }
-    .dark-variant {
-      display:none
-    }
-    li {
-      margin:5px 0;
-      font-family: monospace;
-    }
-    ul {
-      list-style-type: none;
-    }
-    
-    @media (prefers-color-scheme: dark) {
-      :root {
-        background-color:#333;
-        color:#fff
-      }
-      a {
-        color:#7568ff
-      }
-      a:visited {
-        color:#f98fff
-      }
-    }
-    </style>
-    <title>wiki-categories</title>
-  </head>
-  <body>
-    <main>
-        <h1>wiki-categories</h1>
-        <p>This is the index for the wiki-categories site. See the 
-        <a href="https://github.com/jon-edward/wiki-categories">GitHub repo</a> for its usage, file formats, 
-        and creation.</p>
-        <b id="sub-path"></b>
-        <ul id="sub-index">
-        </ul>
-    </main>
-  </body>
-</html>
+    return output;
+}
+
+async function showCategory(categoryId) {
+    const content = await fetch(`${categoryId}.category`);
+    const arrayBuffer = await content.arrayBuffer();
+
+    let offset = 0;
+    const categoryNameLength = getUnsignedInt32(arrayBuffer, offset);
+    offset += 4;
+
+    const categoryName = new TextDecoder().decode(
+        arrayBuffer.slice(offset, offset + categoryNameLength)
+    );
+
+    offset += categoryNameLength;
+
+    const predecessorsByteLength = getUnsignedInt32(arrayBuffer, offset);
+    offset += 4;
+
+    const predecessors = getUnsignedInt32Array(
+        arrayBuffer,
+        offset,
+        predecessorsByteLength
+    );
+
+    offset += predecessorsByteLength;
+
+    const successorsByteLength = getUnsignedInt32(arrayBuffer, offset);
+    offset += 4;
+
+    const successors = getUnsignedInt32Array(
+        arrayBuffer,
+        offset,
+        successorsByteLength
+    );
+
+    offset += successorsByteLength;
+
+    const articlesByteLength = getUnsignedInt32(arrayBuffer, offset);
+    offset += 4;
+
+    const articles = getUnsignedInt32Array(
+        arrayBuffer,
+        offset,
+        articlesByteLength
+    );
+
+    offset += articlesByteLength;
+
+    const articleNamesByteLength = getUnsignedInt32(arrayBuffer, offset);
+    offset += 4;
+
+    const articleNames = new TextDecoder().decode(
+        arrayBuffer.slice(offset, offset + articleNamesByteLength)
+    );
+
+    const category = {
+        name: categoryName,
+        predecessors: predecessors,
+        successors: successors,
+        articles: articles,
+        articleNames: articleNames.split('\0'),
+    };
+
+    const jsonEncoded = encodeURIComponent(JSON.stringify(category));
+    const uri = `data:application/json;charset=utf-8,${jsonEncoded}`;
+    window.location.href = uri;
+}
 """
 
 
-def generate_indices(path: pathlib.Path, root_path: str) -> None:
+def _index_start_template(rel_dir: str) -> str:
     """
-    Generate an index.html file at each subdirectory and root of path directory that lists files for navigation.
+    Generate the HTML template for the index page.
     """
-    for subdir, dirs, files in os.walk(path):
-        _write_index_html(subdir, dirs, files, path, root_path)
+    return textwrap.dedent(f"""
+    <!DOCTYPE html>
+    <html>
+        <head><meta charset="utf-8"><title>Index of {rel_dir}</title>
+            <style>
+                body {{ background: #202124; color: #d3d3d3; font-family: monospace, monospace; }}
+                h1 {{ color: #e0b97d; }}
+                table {{ border-collapse: collapse; width: 100%; max-width: 700px; }}
+                th, td {{ padding: 0.25em 0.75em; text-align: left; }}
+                th {{ color: #b0b0b0; font-weight: normal; border-bottom: 1px solid #333; }}
+                tr {{ border-bottom: 1px solid #232323; }}
+                a {{ color: #7ec3d9; text-decoration: none; }}
+                a.dir {{ color: #7ebf8e; font-weight: bold; }}
+                a:hover {{ text-decoration: underline; }}
+                td.size {{ color: #888; font-size: 0.95em; width: 7em; white-space: nowrap; }}
+            </style>
+        </head>
+    <body>
+        <script>
+        {_category_parsing_script}
+        </script>
+        <h1>Index of {rel_dir}</h1>
+        <table>
+            <thead><tr><th>Name</th><th>Size</th></tr></thead>
+            <tbody>
+    """)
 
 
-def _write_index_html(
-    subdir: str, dirs: list[str], files: list[str], path: pathlib.Path, root_path: str
-) -> None:
-    with open(pathlib.Path(subdir, "index.html"), "w", encoding="utf-8") as f:
-        index = bs4.BeautifulSoup(INDEX_HTML, "html.parser")
-        sub_index = _get_sub_index_tag(index)
+def index_directories(base_path: pathlib.Path, site_root: str = ""):
+    def human_size(num):
+        for unit in ["B", "K", "M", "G", "T", "P"]:
+            if abs(num) < 1024.0:
+                if unit == "B":  # Special case for bytes to avoid decimal point
+                    return f"{num:3.0f}{unit}"
+                return f"{num:3.1f}{unit}"
+            num /= 1024.0
+        return f"{num:.1f}E"
 
-        relative_path = _format_dir(pathlib.Path(subdir).relative_to(path))
-        sub_index.append(f"Directory listing for {relative_path}:")
+    """
+    Recursively create an index.html file in every directory under base_path.
+    Each index.html lists the contents of the directory with links.
+    """
 
-        _add_head_entry(sub_index, index, subdir, path, root_path)
+    def natural_key(s: str) -> list[int | str]:
+        """
+        Convert a string to a list of integers and strings for natural sorting.
+        This allows sorting numbers in the string naturally (e.g., 'file10' after 'file2').
+        """
+        s_clean = s[:-1] if s.endswith("/") else s
+        return [
+            int(text) if text.isdigit() else text.lower()
+            for text in re.split(r"(\\d+)", s_clean)
+        ]
 
-        max_name_len = _get_max_name_len(files, dirs)
+    for root, dirs, files in os.walk(base_path):
+        # Exclude index.html from the list
+        dir_entries = sorted([d + "/" for d in dirs], key=natural_key)
+        file_entries = sorted([f for f in files if f != "index.html"], key=natural_key)
+        entries = dir_entries + file_entries
+        rel_dir = os.path.relpath(root, base_path)
+        # Ensure site_root starts and ends with a single slash if not empty
+        site_root_clean = ("/" + site_root.strip("/") + "/") if site_root else "/"
+        # Compute the URL path for this directory
+        url_dir = site_root_clean + (rel_dir + "/" if rel_dir != "." else "")
+        content = _index_start_template(rel_dir)
 
-        dirs.sort(key=lambda x: _int_if_digits(x, max_name_len))
+        # Add parent directory link if not at base
+        if os.path.abspath(root) != os.path.abspath(base_path):
+            content += '<tr><td><a href="../" class="dir">../</a></td><td class="size"></td></tr>'
 
-        for dir_ in dirs:
-            sub_index.append(
-                _create_sub_path_entry(
-                    index, pathlib.Path(subdir, dir_), path, root_path, is_dir=True
-                )
-            )
+        for entry in entries:
+            href = url_dir + entry
+            is_dir = entry.endswith("/")
+            cls = ' class="dir"' if is_dir else ""
+            size_str = ""
+            if is_dir:
+                dir_path = os.path.join(root, entry[:-1])
+                try:
+                    subdirs = [
+                        d
+                        for d in os.listdir(dir_path)
+                        if os.path.isdir(os.path.join(dir_path, d))
+                    ]
+                    files_ = [
+                        f
+                        for f in os.listdir(dir_path)
+                        if os.path.isfile(os.path.join(dir_path, f))
+                        and f != "index.html"
+                    ]
+                    size_str = f"{len(subdirs)} dirs, {len(files_)} files"
+                except Exception:
+                    size_str = ""
+                content += f'<tr><td><a href="{href}"{cls}>{entry}</a></td><td class="size">{size_str}</td></tr>'
+            else:
+                file_path = os.path.join(root, entry)
+                try:
+                    size = os.path.getsize(file_path)
+                    size_str = human_size(size)
+                except OSError:
+                    pass
+                # Use the filename (without extension) as the categoryId for showCategory
+                category_id, extension = os.path.splitext(entry)
+                if extension.lower() == ".category":
+                    content += f'<tr><td><a href="#" onclick="showCategory(\'{category_id}\');return false;">{entry}</a></td><td class="size">{size_str}</td></tr>'
+                else:
+                    content += f'<tr><td><a href="{href}">{entry}</a></td><td class="size">{size_str}</td></tr>'
 
-        files.sort(key=lambda x: _int_if_digits(x, max_name_len))
+        content += "</tbody></table></body></html>"
 
-        for file in files:
-            if file == "index.html":
-                continue
-            sub_index.append(
-                _create_sub_path_entry(
-                    index, pathlib.Path(subdir, file), path, root_path, is_dir=False
-                )
-            )
-
-        content: str = index.prettify(encoding="utf-8")  # type: ignore[return-value]
-
-        if isinstance(content, bytes):
-            content = content.decode("utf-8")
-
-        f.write(content)
-
-
-def _get_sub_index_tag(index: bs4.BeautifulSoup) -> bs4.element.Tag:
-    sub_index = index.find(id="sub-index")
-    if not isinstance(sub_index, bs4.element.Tag):
-        raise ValueError("Index HTML template is missing the 'sub-index' element.")
-    return sub_index
-
-
-def _format_dir(relative_d: pathlib.Path) -> str:
-    return f"/{relative_d}/" if str(relative_d) != "." else "root"
-
-
-def _add_head_entry(
-    sub_index: bs4.element.Tag,
-    index: bs4.BeautifulSoup,
-    subdir: str,
-    path: pathlib.Path,
-    root_path: str,
-) -> None:
-    try:
-        head_entry = _create_sub_path_entry(
-            index,
-            pathlib.Path(subdir).parent,
-            path,
-            root_path,
-            display_text="..",
-            is_dir=True,
-        )
-        head_entry.attrs["class"] += " is-head-dir"
-        sub_index.append(head_entry)
-    except ValueError:
-        pass
-
-
-def _get_max_name_len(files: list[str], dirs: list[str]) -> int:
-    return (
-        max(len(x.split(".")[0]) for x in itertools.chain(files, dirs))
-        if files or dirs
-        else 0
-    )
-
-
-def _int_if_digits(path_segment: str, max_name_len: int) -> str:
-    name, *_ = path_segment.split(".")
-    if name.isdigit():
-        return f"{'0'*(max_name_len-len(name))}{name}"
-    return name.lower()
-
-
-def _create_sub_path_entry(
-    index: bs4.BeautifulSoup,
-    sub_path: pathlib.Path,
-    path: pathlib.Path,
-    root_path: str,
-    display_text: str | None = None,
-    is_dir: bool = False,
-) -> bs4.element.Tag:
-    href_content = os.path.join(root_path, sub_path.relative_to(path))
-
-    li_tag = index.new_tag("li")
-    li_tag.attrs["class"] = "is-dir" if is_dir else "is-file"
-
-    a_tag = index.new_tag("a")
-    a_tag.attrs["href"] = href_content + (
-        os.path.sep if is_dir and href_content != os.path.sep else ""
-    )
-
-    if display_text is None:
-        a_tag.append(href_content + (os.path.sep if is_dir else ""))
-    else:
-        a_tag.append(display_text)
-
-    li_tag.append(a_tag)
-    return li_tag
+        index_path = os.path.join(root, "index.html")
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write(content)
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Generate HTML indices for directories.")
-    parser.add_argument("path", type=pathlib.Path, help="Path to the directory to index.")
-    parser.add_argument(
-        "--root-path",
-        type=str,
-        default=os.path.sep,
-        help="Root path for the HTML indices.",
-    )
-    args = parser.parse_args()
-
-    generate_indices(args.path, args.root_path)
+    # Example usage
+    base_path = pathlib.Path("pages")  # Change to your desired base path
+    index_directories(base_path, "wiki-categories")
+    print(f"Index files created under {base_path.resolve()}")

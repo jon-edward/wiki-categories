@@ -31,7 +31,7 @@ _DATETIME_STRFTIME = "%m/%d/%Y, %H:%M:%S"
 
 
 def _bytes_from_uint32(val: Iterable[int]) -> bytes:
-    return b"".join(struct.pack(">I", v) for v in val)
+    return b"".join(struct.pack("<I", v) for v in val)
 
 
 def _serialize_fields(*fields: bytes) -> bytes:
@@ -58,14 +58,14 @@ def _serialize_category(
     predecessors_bytes = _bytes_from_uint32(predecessors)
     successors_bytes = _bytes_from_uint32(successors)
     articles_bytes = _bytes_from_uint32(articles)
-    articles_names_bytes = b"".join(name.encode() + b"\0" for name in article_names)
+    article_names_bytes = b"\0".join(name.encode() for name in article_names)
 
     return _serialize_fields(
         name_bytes,
         predecessors_bytes,
         successors_bytes,
         articles_bytes,
-        articles_names_bytes,
+        article_names_bytes,
     )
 
 

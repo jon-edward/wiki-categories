@@ -25,7 +25,7 @@ time of writing has about 2 million unique categories.
 A `.category` file is a concatenation of fields, each field starts
 with a 32-bit integer that describes how long the value is in bytes,
 and is immediately followed by the value. The file is named by its page
-id.
+id. The integers are little-endian.
 
 The fields of the binary file are as follows (in this order):
 

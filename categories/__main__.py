@@ -17,7 +17,7 @@ import requests
 from config import parse_config, RunConfig
 from process_categories import process_categories, CategoriesInfo
 from gzip_buffer import read_buffered_gzip
-from html_indices import generate_indices
+from html_indices import index_directories
 from parse import parse_category_links, parse_pages, split_lines
 
 
@@ -83,7 +83,7 @@ def main() -> None:
     _write_run_info(args, categories_info, category_links_modified, pages_modified)
 
     if not args.no_indices:
-        generate_indices(args.dest, args.index_root_path)
+        index_directories(args.dest, args.index_root_path)
 
 
 def _setup_logging(args: RunConfig) -> None:
