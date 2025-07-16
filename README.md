@@ -25,7 +25,7 @@ time of writing has about 2 million unique categories.
 A `.category` file is a concatenation of fields, each field starts
 with a 32-bit integer that describes how long the value is in bytes,
 and is immediately followed by the value. The file is named by its page
-id. The integers are little-endian.
+id. The integers are big-endian.
 
 The fields of the binary file are as follows (in this order):
 
@@ -55,7 +55,7 @@ class Category:
 
 def uint32_from_bytes(data: bytes) -> list[int]:
   num_integers = len(data) // 4
-  return list(struct.unpack(f'<{num_integers}I', data))
+  return list(struct.unpack(f'>{num_integers}I', data))
 
 def str_list_from_bytes(data: bytes) -> list[str]:
   return [s.decode("utf-8") for s in data.split(b"\0")]

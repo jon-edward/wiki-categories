@@ -31,11 +31,11 @@ _DATETIME_STRFTIME = "%m/%d/%Y, %H:%M:%S"
 
 
 def _bytes_from_uint32(val: Iterable[int]) -> bytes:
-    return b"".join(struct.pack("<I", v) for v in val)
+    return b"".join(struct.pack(">I", v) for v in val)
 
 
 def _serialize_fields(*fields: bytes) -> bytes:
-    return b"".join(len(x).to_bytes(length=4) + x for x in fields)
+    return b"".join(len(x).to_bytes(length=4, byteorder="big") + x for x in fields)
 
 
 def _serialize_category(
