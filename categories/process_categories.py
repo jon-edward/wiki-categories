@@ -155,6 +155,11 @@ def _get_category_tree_data(
 
     return data
 
+def _remove_articles(data: _CategoryTreeData, excluded_articles: set[int]) -> None:
+    for category, articles in data.category_to_articles.items():
+        data.category_to_articles[category] = array(
+            "L", [a for a in articles if a not in excluded_articles]
+        )
 
 def process_categories(
     config: RunConfig,
@@ -170,13 +175,14 @@ def process_categories(
     cat_graph = _build_category_graph(data)
     excluded_categories, excluded_articles = _get_excluded(config, cat_graph, data)
 
+    _remove_articles(data, excluded_articles)
     _remove_excluded_categories(cat_graph, excluded_categories)
     _remove_small_and_inaccessible(cat_graph, config, data)
 
     _log_exclusions(excluded_categories, excluded_articles)
 
     added_articles = _process_and_write_categories(
-        config, cat_graph, data, excluded_articles
+        config, cat_graph, data
     )
     _write_dir_indices(config)
 
@@ -357,7 +363,6 @@ def _process_and_write_categories(
     config: RunConfig,
     cat_graph: nx.DiGraph,
     data: _CategoryTreeData,
-    excluded_articles: set[int],
 ) -> set[int]:
     """
     Process categories and write their data to files.
@@ -383,7 +388,7 @@ def _process_and_write_categories(
         articles = [
             a
             for a in data.category_to_articles[category]
-            if a not in excluded_articles and a in data.article_id_to_name
+            if a in data.article_id_to_name
         ]
 
         if (
