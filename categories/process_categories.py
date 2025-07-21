@@ -1,13 +1,10 @@
-"""
-Contains the main function entrypoint for categories.
-"""
-
 from array import array
 from collections import defaultdict
 import dataclasses
 import datetime
 from itertools import chain
 import logging
+from concurrent.futures import ThreadPoolExecutor
 import os
 import pathlib
 import pickle
@@ -18,14 +15,15 @@ from typing import (
     DefaultDict,
     Iterable,
     Union,
+    Generator
 )
 
 import networkx as nx
 import numpy as np
 from tqdm import tqdm
 
-from config import RunConfig
-from parse import CategoryLink, Page
+from categories.config import RunConfig
+from categories.parse import CategoryLink, Page
 
 _DATETIME_STRFTIME = "%m/%d/%Y, %H:%M:%S"
 
@@ -211,11 +209,14 @@ def _get_or_load_category_tree_data(
     """
     Load or generate category tree data, using cache if enabled.
     """
-    category_tree_cached = pathlib.Path("data_cache/_cached_category_tree_data.pickle")
+
+    category_tree_cached = pathlib.Path(__file__).parent.parent / "data_cache" / "_cached_category_tree_data.pickle"
 
     if config.use_cache:
         if not os.path.exists(category_tree_cached):
             data = _get_category_tree_data(category_links_gen, pages_gen)
+
+            category_tree_cached.parent.mkdir(parents=True, exist_ok=True)
 
             with open(category_tree_cached, "wb") as f:
                 pickle.dump(data, f)
@@ -358,7 +359,6 @@ def _log_exclusions(excluded_categories: set[int], excluded_articles: set[int]) 
             len(excluded_articles),
         )
 
-
 def _process_and_write_categories(
     config: RunConfig,
     cat_graph: nx.DiGraph,
@@ -369,43 +369,54 @@ def _process_and_write_categories(
 
     Returns the set of added articles.
     """
+
     added_articles = set()
 
+    # Pre-create all chunk directories, ignore if they exist
     for balancing_idx in range(config.balancing_mod_operand):
         category_chunk_dir = config.dest.joinpath(str(balancing_idx))
-        category_chunk_dir.mkdir()
+        category_chunk_dir.mkdir(exist_ok=True)
 
-    for category in tqdm(
-        cat_graph, disable=not config.dev, desc="Processing categories"
-    ):
-        name = data.category_id_to_name[category]
-        predecessors = cat_graph.predecessors(category)
-        successors = cat_graph.successors(category)
-        category_chunk_dir = config.dest.joinpath(
-            str(category % config.balancing_mod_operand)
-        )
+    category_id_to_name = data.category_id_to_name
+    category_to_articles = data.category_to_articles
+    article_id_to_name = data.article_id_to_name
 
-        articles = [
-            a
-            for a in data.category_to_articles[category]
-            if a in data.article_id_to_name
-        ]
+    max_articles = config.max_articles_per_category
+    balancing_mod = config.balancing_mod_operand
 
-        if (
-            len(articles) > config.max_articles_per_category
-            and config.max_articles_per_category != -1
+    def get_files_contents() -> Generator[tuple[pathlib.Path, bytes], None, None]:
+        # Can be thread-unsafe
+        for category in tqdm(
+            cat_graph, disable=not config.dev, desc="Processing categories", miniters=1_000
         ):
-            articles = random.sample(articles, config.max_articles_per_category)
+            name = category_id_to_name[category]
+            predecessors = tuple(cat_graph.predecessors(category))
+            successors = tuple(cat_graph.successors(category))
+            category_chunk_dir = config.dest.joinpath(str(category % balancing_mod))
 
-        added_articles.update(articles)
+            articles = tuple(a for a in category_to_articles[category] if a in article_id_to_name)
 
-        with open(category_chunk_dir.joinpath(f"{category}.category"), "wb") as f:
-            article_names = [data.article_id_to_name[a] for a in articles]
-            f.write(
+            if max_articles != -1 and len(articles) > max_articles:
+                articles = random.sample(articles, max_articles)
+
+            added_articles.update(articles)
+            article_names = tuple(article_id_to_name[a] for a in articles)
+
+            yield (
+                category_chunk_dir.joinpath(f"{category}.category"),
                 _serialize_category(
                     name, predecessors, successors, articles, article_names
-                )
+                ),
             )
+
+    def write_file(file_contents: tuple[pathlib.Path, bytes]) -> None:
+        # Has to be thread-safe
+        file_path, contents = file_contents
+        file_path.write_bytes(contents)
+
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+        for _ in executor.map(write_file, get_files_contents()):
+            pass
 
     return added_articles
 

@@ -3,7 +3,6 @@ Defines the configuration for the categories processing script.
 """
 
 from dataclasses import dataclass, field
-import os
 from pathlib import Path
 from typing import Sequence
 
@@ -19,7 +18,7 @@ class RunConfig:
     language: str = "en"
     dest: Path = Path("pages")
     index_root_path: str = field(
-        default=os.path.sep, metadata={"help": "Root path for HTML indices."}
+        default="", metadata={"help": "Root path for HTML indices."}
     )
     excluded_parents: list[int] = field(default_factory=list, metadata={"nargs": "*"})
     excluded_grandparents: list[int] = field(
@@ -55,7 +54,7 @@ class RunConfig:
         default=2000, metadata={"help": "Modulus for balancing categories into bins."}
     )
     safe_depth: int = field(
-        default=15,
+        default=12,
         metadata={
             "help": "Depth from root node that should not be deleted from by article count percentile."
         },

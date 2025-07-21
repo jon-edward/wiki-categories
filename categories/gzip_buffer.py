@@ -85,6 +85,7 @@ def _create_progress_bar(total: int, progress: bool) -> tqdm:
         unit_scale=True,
         unit_divisor=1024,
         disable=not progress,
+        miniters=1_000_000,
     )
 
 

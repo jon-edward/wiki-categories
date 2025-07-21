@@ -3,6 +3,8 @@ import pathlib
 import re
 import textwrap
 
+import minify_html
+
 
 with open(os.path.join(os.path.dirname(__file__), "category_parsing.js")) as f:
     _CATEGORY_PARSING_SCRIPT = f.read()
@@ -123,7 +125,7 @@ def index_directories(base_path: pathlib.Path, site_root: str = ""):
 
         index_path = os.path.join(root, "index.html")
         with open(index_path, "w", encoding="utf-8") as f:
-            f.write(content)
+            f.write(minify_html.minify(content, minify_css=True, minify_js=True))
 
 
 if __name__ == "__main__":

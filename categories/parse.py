@@ -13,7 +13,7 @@ _INTEGER_VALUE = r"\d+"
 _FLOAT_VALUE = r"\d+\.\d+"
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(slots=True)
 class CategoryLink:
     """
     A deserialized entry within a category links SQL script.
@@ -24,7 +24,7 @@ class CategoryLink:
     is_article: bool
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(slots=True)
 class Page:
     """
     A deserialized entry within a pages SQL script.

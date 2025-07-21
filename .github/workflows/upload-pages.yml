@@ -34,7 +34,7 @@ jobs:
             unset GH_PAGES_URL
           fi
 
-          bash ./run.sh
+          python build.py
           touch ./pages/.nojekyll
 
       - name: Upload artifact
