@@ -32,20 +32,91 @@ function parseCategory(data) {
 
   return {
     name: readString(),
-    successors: readUint32Array(),
     predecessors: readUint32Array(),
+    successors: readUint32Array(),
     articles: readUint32Array(),
     articleNames: readString().split(String.fromCharCode(0)),
   };
+}
+
+function listChild(name, contents) {
+  const root = document.createElement("div");
+  const title = document.createElement("h3");
+
+  title.textContent = name;
+  root.appendChild(title);
+
+  const list = document.createElement("ul");
+
+  for (const child of contents) {
+    const listItem = document.createElement("li");
+    listItem.textContent = child;
+    list.appendChild(listItem);
+  }
+
+  if (list.children.length === 0) {
+    const listItem = document.createElement("li");
+    listItem.textContent = "[None]";
+    list.appendChild(listItem);
+    list.classList.add("empty");
+  }
+
+  root.appendChild(list);
+  return root;
+}
+
+function pageFromCategory(category) {
+  const doc = document.implementation.createHTMLDocument(`${category.name}`);
+  const element = doc.body;
+
+  let style = "";
+
+  for (const styleSheet of document.getElementsByTagName("style")) {
+    style += styleSheet.innerHTML + "\n";
+  }
+
+  const styleElement = doc.createElement("style");
+  styleElement.textContent = style;
+  element.appendChild(styleElement);
+
+  const name = doc.createElement("h1");
+  name.textContent = category.name;
+  element.appendChild(name);
+
+  const id = doc.createElement("h2");
+  id.textContent = `Id: ${category.id}`;
+  element.appendChild(id);
+
+  element.appendChild(listChild("Predecessors", category.predecessors));
+  element.appendChild(listChild("Successors", category.successors));
+  element.appendChild(listChild("Articles", category.articles));
+  element.appendChild(listChild("Article names", category.articleNames));
+
+  return element;
 }
 
 async function showCategory(categoryId) {
   const content = await fetch(`${categoryId}.category`);
   const arrayBuffer = await content.arrayBuffer();
 
-  const category = parseCategory(arrayBuffer);
+  const page = pageFromCategory({
+    id: categoryId,
+    ...parseCategory(arrayBuffer),
+  });
 
-  const jsonEncoded = encodeURIComponent(JSON.stringify(category));
-  const uri = `data:application/json;charset=utf-8,${jsonEncoded}`;
-  window.location.href = uri;
+  const blob = new Blob([new XMLSerializer().serializeToString(page)], {
+    type: "text/html;charset=utf-8",
+  });
+
+  return blob;
+}
+
+function clickedCategory(categoryId) {
+  const windowReference = window.open("", "_self");
+  showCategory(categoryId)
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      windowReference.location.href = url;
+    })
+    .catch(console.error);
 }

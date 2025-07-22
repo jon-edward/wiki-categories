@@ -19,7 +19,7 @@ def _index_start_template(rel_dir: str) -> str:
     <html>
         <head><meta charset="utf-8"><title>Index of {rel_dir}</title>
             <style>
-                body {{ background: #202124; color: #d3d3d3; font-family: monospace, monospace; }}
+                body {{ background: #202124; color: #d3d3d3; font-family: monospace, monospace; margin: 20px; }}
                 h1 {{ color: #e0b97d; }}
                 table {{ border-collapse: collapse; width: 100%; max-width: 700px; }}
                 th, td {{ padding: 0.25em 0.75em; text-align: left; }}
@@ -29,6 +29,7 @@ def _index_start_template(rel_dir: str) -> str:
                 a.dir {{ color: #7ebf8e; font-weight: bold; }}
                 a:hover {{ text-decoration: underline; }}
                 td.size {{ color: #888; font-size: 0.95em; width: 7em; white-space: nowrap; }}
+                .empty {{ color: #d3d3d3cc; }}
             </style>
         </head>
     <body>
@@ -117,7 +118,7 @@ def index_directories(base_path: pathlib.Path, site_root: str = ""):
                 # Use the filename (without extension) as the categoryId for showCategory
                 category_id, extension = os.path.splitext(entry)
                 if extension.lower() == ".category":
-                    content += f'<tr><td><a href="#" onclick="showCategory(\'{category_id}\');return false;">{entry}</a></td><td class="size">{size_str}</td></tr>'
+                    content += f'<tr><td><a href="#" onclick="clickedCategory({category_id}); return false">{entry}</a></td><td class="size">{size_str}</td></tr>'
                 else:
                     content += f'<tr><td><a href="{href}">{entry}</a></td><td class="size">{size_str}</td></tr>'
 
