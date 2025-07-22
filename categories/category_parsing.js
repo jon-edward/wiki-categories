@@ -30,12 +30,22 @@ function parseCategory(data) {
     return output;
   }
 
+  const name = readString();
+  const predecessors = readUint32Array();
+  const successors = readUint32Array();
+  const articles = readUint32Array();
+  const articleNamesUnsplit = readString();
+  const articleNames =
+    articleNamesUnsplit.length === 0
+      ? []
+      : articleNamesUnsplit.split(String.fromCharCode(0));
+
   return {
-    name: readString(),
-    predecessors: readUint32Array(),
-    successors: readUint32Array(),
-    articles: readUint32Array(),
-    articleNames: readString().split(String.fromCharCode(0)),
+    name,
+    predecessors,
+    successors,
+    articles,
+    articleNames,
   };
 }
 
@@ -46,7 +56,7 @@ function listChild(name, contents) {
   title.textContent = name;
   root.appendChild(title);
 
-  const list = document.createElement("ul");
+  const list = document.createElement("ol");
 
   for (const child of contents) {
     const listItem = document.createElement("li");
@@ -83,7 +93,7 @@ function pageFromCategory(category) {
   name.textContent = category.name;
   element.appendChild(name);
 
-  const id = doc.createElement("h2");
+  const id = doc.createElement("h3");
   id.textContent = `Id: ${category.id}`;
   element.appendChild(id);
 

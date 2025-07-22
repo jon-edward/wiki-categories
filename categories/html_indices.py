@@ -29,7 +29,7 @@ def _index_start_template(rel_dir: str) -> str:
                 a.dir {{ color: #7ebf8e; font-weight: bold; }}
                 a:hover {{ text-decoration: underline; }}
                 td.size {{ color: #888; font-size: 0.95em; width: 7em; white-space: nowrap; }}
-                .empty {{ color: #d3d3d3cc; }}
+                .empty {{ color: #d3d3d3cc; list-style-type: none; }}
             </style>
         </head>
     <body>
@@ -44,6 +44,11 @@ def _index_start_template(rel_dir: str) -> str:
 
 
 def index_directories(base_path: pathlib.Path, site_root: str = ""):
+    """
+    Recursively create an index.html file in every directory under base_path.
+    Each index.html lists the contents of the directory with links.
+    """
+
     def human_size(num):
         for unit in ["B", "K", "M", "G", "T", "P"]:
             if abs(num) < 1024.0:
@@ -52,11 +57,6 @@ def index_directories(base_path: pathlib.Path, site_root: str = ""):
                 return f"{num:3.1f}{unit}"
             num /= 1024.0
         return f"{num:.1f}E"
-
-    """
-    Recursively create an index.html file in every directory under base_path.
-    Each index.html lists the contents of the directory with links.
-    """
 
     def natural_key(s: str) -> list[int | str]:
         """
