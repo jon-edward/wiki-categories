@@ -11,6 +11,7 @@
 # 30176254 - Container categories
 # 15961454 - Hidden categories
 # 7361045 - Tracking categories
+# 3746758 - Wikipedians by WikiProject
 
 # EXCLUDED GRANDPARENTS:
 # 6256963 - Articles by importance
@@ -37,6 +38,7 @@ python ./categories --language en \
         30176254 \
         15961454 \
         7361045 \
+        3746758
     --excluded-article-categories \
         43077354 \
     --excluded-grandparents \
