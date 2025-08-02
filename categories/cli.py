@@ -61,7 +61,7 @@ def main(config: Optional[RunConfig] = None) -> None:
         args = config
     else:
         args = parse_config()
-    
+
     pprint(args)
 
     _setup_logging(args)

@@ -53,22 +53,10 @@ class RunConfig:
     balancing_mod_operand: int = field(
         default=2000, metadata={"help": "Modulus for balancing categories into bins."}
     )
-    safe_depth: int = field(
-        default=12,
-        metadata={
-            "help": "Depth from root node that should not be deleted from by article count percentile."
-        },
-    )
     article_count_percentile: int = field(
-        default=30,
+        default=50,
         metadata={
             "help": "Percentile of article count that a category must have to not be deleted."
-        },
-    )
-    root_node: int = field(
-        default=14105005,
-        metadata={
-            "help": "Root node ID for the category graph. In English Wikipedia, this is the ID for 'Category:Contents'."
         },
     )
 

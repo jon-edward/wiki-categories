@@ -10,13 +10,7 @@ import pathlib
 import pickle
 import random
 import struct
-from typing import (
-    Callable,
-    DefaultDict,
-    Iterable,
-    Union,
-    Generator
-)
+from typing import Callable, DefaultDict, Iterable, Union, Generator
 
 import networkx as nx
 import numpy as np
@@ -153,11 +147,13 @@ def _get_category_tree_data(
 
     return data
 
+
 def _remove_articles(data: _CategoryTreeData, excluded_articles: set[int]) -> None:
     for category, articles in data.category_to_articles.items():
         data.category_to_articles[category] = array(
             "L", [a for a in articles if a not in excluded_articles]
         )
+
 
 def process_categories(
     config: RunConfig,
@@ -173,15 +169,23 @@ def process_categories(
     cat_graph = _build_category_graph(data)
     excluded_categories, excluded_articles = _get_excluded(config, cat_graph, data)
 
-    _remove_articles(data, excluded_articles)
-    _remove_excluded_categories(cat_graph, excluded_categories)
-    _remove_small_and_inaccessible(cat_graph, config, data)
-
-    _log_exclusions(excluded_categories, excluded_articles)
-
-    added_articles = _process_and_write_categories(
-        config, cat_graph, data
+    logging.debug(
+        "Removing %d articles specified in the config.", len(excluded_articles)
     )
+    _remove_articles(data, excluded_articles)
+
+    logging.debug(
+        "Removing %d categories specified in the config.", len(excluded_categories)
+    )
+    _remove_categories(cat_graph, excluded_categories)
+
+    _remove_small_categories(cat_graph, config, data)
+    _keep_largest_graph_component(cat_graph)
+
+    logging.debug("%d total categories.", len(cat_graph))
+
+    added_articles = _process_and_write_categories(config, cat_graph, data)
+
     _write_dir_indices(config)
 
     categories_count = len(cat_graph)
@@ -189,7 +193,6 @@ def process_categories(
 
     finished = datetime.datetime.now()
 
-    logging.debug("%d total categories", categories_count)
     logging.debug("%d total articles", articles_count)
     logging.debug("Finished at %s", finished.strftime(_DATETIME_STRFTIME))
 
@@ -210,7 +213,11 @@ def _get_or_load_category_tree_data(
     Load or generate category tree data, using cache if enabled.
     """
 
-    category_tree_cached = pathlib.Path(__file__).parent.parent / "data_cache" / "_cached_category_tree_data.pickle"
+    category_tree_cached = (
+        pathlib.Path(__file__).parent.parent
+        / "data_cache"
+        / "_cached_category_tree_data.pickle"
+    )
 
     if config.use_cache:
         if not os.path.exists(category_tree_cached):
@@ -274,9 +281,7 @@ def _get_excluded(
     return excluded_categories, excluded_articles
 
 
-def _remove_excluded_categories(
-    cat_graph: nx.DiGraph, excluded_categories: set[int]
-) -> None:
+def _remove_categories(cat_graph: nx.DiGraph, excluded_categories: set[int]) -> None:
     """
     Remove excluded categories from the graph.
     """
@@ -284,24 +289,16 @@ def _remove_excluded_categories(
         cat_graph.remove_nodes_from(excluded_categories)
 
 
-def _get_safe_categories(G: nx.DiGraph, config: RunConfig) -> set[int]:
+def _keep_largest_graph_component(cat_graph: nx.DiGraph) -> None:
     """
-    Get categories that are safe to keep based on the safe depth.
+    Keep only nodes in the largest graph component.
     """
-    return set(nx.dfs_tree(G, config.root_node, depth_limit=config.safe_depth).nodes())
-
-
-def _remove_contents_inaccessible(G: nx.DiGraph, config: RunConfig) -> None:
-    """
-    Remove nodes that are not accessible from the root node.
-    """
-    accessible = set(nx.dfs_tree(G, config.root_node).nodes())
-    inaccessible = set(G.nodes()) - accessible
-    if inaccessible:
-        logging.debug(
-            "Removing %d inaccessible categories from the graph.", len(inaccessible)
-        )
-        G.remove_nodes_from(inaccessible)
+    largest_component = set(
+        max(nx.connected_components(cat_graph.to_undirected()), key=len)
+    )
+    to_remove = set(cat_graph.nodes()) - largest_component
+    logging.debug("Removing %d nodes not in largest graph component.", len(to_remove))
+    _remove_categories(cat_graph, to_remove)
 
 
 def _get_article_count_percentile(
@@ -314,50 +311,28 @@ def _get_article_count_percentile(
     return int(np.percentile(article_counts, config.article_count_percentile))
 
 
-def _remove_small_and_inaccessible(
+def _remove_small_categories(
     cat_graph: nx.DiGraph, config: RunConfig, data: _CategoryTreeData
 ) -> None:
     """
-    Remove small categories and inaccessible nodes from the graph.
+    Remove small categories.
     """
-    safe_categories = _get_safe_categories(cat_graph, config)
-    logging.debug("Safe categories: %d", len(safe_categories))
-
     min_article_count = _get_article_count_percentile(cat_graph, config, data) + 1
 
     small_categories = set(
         n
         for n in cat_graph.nodes()
         if len(data.category_to_articles[n]) < min_article_count
-        and n not in safe_categories
     )
 
     if small_categories:
         logging.debug(
-            "Removing %d small categories that are not safe. These categories have less than %d articles.",
+            "Removing %d small categories. These categories have less than %d articles.",
             len(small_categories),
             min_article_count,
         )
         cat_graph.remove_nodes_from(small_categories)
 
-    _remove_contents_inaccessible(cat_graph, config)
-
-
-def _log_exclusions(excluded_categories: set[int], excluded_articles: set[int]) -> None:
-    """
-    Log excluded categories and articles.
-    """
-    if excluded_categories:
-        logging.debug(
-            "Excluding %d categories that were specified in the config.",
-            len(excluded_categories),
-        )
-
-    if excluded_articles:
-        logging.debug(
-            "Excluding %d articles that were specified in the config.",
-            len(excluded_articles),
-        )
 
 def _process_and_write_categories(
     config: RunConfig,
@@ -385,16 +360,18 @@ def _process_and_write_categories(
     balancing_mod = config.balancing_mod_operand
 
     def get_files_contents() -> Generator[tuple[pathlib.Path, bytes], None, None]:
-        # Can be thread-unsafe
+        # Can be thread unsafe. Generating file content is fast
         for category in tqdm(
-            cat_graph, disable=not config.dev, desc="Processing categories", miniters=1_000
+            cat_graph, disable=not config.dev, desc="Writing categories", miniters=1_000
         ):
             name = category_id_to_name[category]
             predecessors = tuple(cat_graph.predecessors(category))
             successors = tuple(cat_graph.successors(category))
             category_chunk_dir = config.dest.joinpath(str(category % balancing_mod))
 
-            articles = tuple(a for a in category_to_articles[category] if a in article_id_to_name)
+            articles = tuple(
+                a for a in category_to_articles[category] if a in article_id_to_name
+            )
 
             if max_articles != -1 and len(articles) > max_articles:
                 articles = random.sample(articles, max_articles)
@@ -410,11 +387,13 @@ def _process_and_write_categories(
             )
 
     def write_file(file_contents: tuple[pathlib.Path, bytes]) -> None:
-        # Has to be thread-safe
+        # Has to be thread-safe. Writing files is slow
         file_path, contents = file_contents
         file_path.write_bytes(contents)
 
-    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+    max_workers = os.cpu_count()
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        logging.debug("Writing categories with %d threads", max_workers)
         for _ in executor.map(write_file, get_files_contents()):
             pass
 
