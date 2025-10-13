@@ -39,7 +39,7 @@ if __name__ == "__main__":
             30176254,
             15961454,
             7361045,
-            3746758
+            3746758,
         ],
         excluded_grandparents=[6256963, 6256931],
         excluded_article_categories=[43077354],

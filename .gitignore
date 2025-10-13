@@ -162,6 +162,5 @@ cython_debug/
 .idea/
 
 pages/
-data_cache/
 *.pickle
 *.pkl

@@ -16,7 +16,7 @@ def read_buffered_gzip(
     """
     Read chunks of a gzipped file, either local or remote.
     If the path is a local file, it reads from the file system.
-    If the path is a remote url, it downloads the file and reads it.
+    If the path is a remote url, it streams the file over the network.
     """
     if isinstance(path_or_url, pathlib.Path):
         return read_buffered_gzip_local(path_or_url, chunk_size, progress)

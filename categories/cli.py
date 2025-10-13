@@ -14,10 +14,15 @@ from typing import Optional
 
 import requests
 
-from categories.config import parse_config, RunConfig
+from categories.config import RunConfig
 from categories.process_categories import process_categories, CategoriesInfo
 from categories.gzip_buffer import read_buffered_gzip
-from categories.parse import parse_category_links, parse_pages, split_lines
+from categories.parse import (
+    parse_category_links,
+    parse_pages,
+    parse_link_targets,
+    split_lines,
+)
 from categories.html_indices import index_directories
 
 
@@ -60,16 +65,20 @@ def main(config: Optional[RunConfig] = None) -> None:
     if config:
         args = config
     else:
-        args = parse_config()
+        args = RunConfig()
 
     pprint(args)
 
     _setup_logging(args)
     _prepare_output_dir(args)
 
-    category_links_url, pages_url, category_links_modified, pages_modified = (
-        _resolve_data_sources(args)
-    )
+    (
+        category_links_url,
+        pages_url,
+        link_target_url,
+        category_links_modified,
+        pages_modified,
+    ) = _resolve_data_sources(args)
 
     _exit_if_redundant(category_links_modified, pages_modified)
 
@@ -80,6 +89,9 @@ def main(config: Optional[RunConfig] = None) -> None:
         ),
         lambda: parse_pages(
             split_lines(read_buffered_gzip(pages_url, progress=args.dev))
+        ),
+        lambda: parse_link_targets(
+            split_lines(read_buffered_gzip(link_target_url, progress=args.dev))
         ),
     )
 
@@ -106,13 +118,21 @@ def _prepare_output_dir(args: RunConfig) -> None:
 
 def _resolve_data_sources(
     args: RunConfig,
-) -> tuple[str | pathlib.Path, str | pathlib.Path, Optional[str], Optional[str]]:
+) -> tuple[
+    str | pathlib.Path,
+    str | pathlib.Path,
+    str | pathlib.Path,
+    Optional[str],
+    Optional[str],
+]:
     category_links_url = (
         f"https://dumps.wikimedia.org/{args.language}wiki/"
         f"latest/{args.language}wiki-latest-categorylinks.sql.gz"
     )
 
     pages_url = f"https://dumps.wikimedia.org/{args.language}wiki/latest/{args.language}wiki-latest-page.sql.gz"
+
+    link_target_url = f"https://dumps.wikimedia.org/{args.language}wiki/latest/{args.language}wiki-latest-linktarget.sql.gz"
 
     if args.use_cache:
         cache_dir = pathlib.Path("data_cache")
@@ -130,6 +150,14 @@ def _resolve_data_sources(
             pages_url = cached_pages
             logging.info(f"Using cached pages from {pages_url}")
 
+        cached_link_target = cache_dir.joinpath(
+            f"{args.language}wiki-latest-linktarget.sql"
+        )
+
+        if cached_link_target.exists():
+            link_target_url = cached_link_target
+            logging.info(f"Using cached link target from {link_target_url}")
+
         category_links_modified = None
         pages_modified = None
     else:
@@ -140,7 +168,13 @@ def _resolve_data_sources(
             "Last-Modified", None
         )
 
-    return category_links_url, pages_url, category_links_modified, pages_modified
+    return (
+        category_links_url,
+        pages_url,
+        link_target_url,
+        category_links_modified,
+        pages_modified,
+    )
 
 
 def _exit_if_redundant(

@@ -17,7 +17,7 @@ import numpy as np
 from tqdm import tqdm
 
 from categories.config import RunConfig
-from categories.parse import CategoryLink, Page
+from categories.parse import CategoryLink, Page, LinkTarget
 
 _DATETIME_STRFTIME = "%m/%d/%Y, %H:%M:%S"
 
@@ -118,6 +118,7 @@ class _CategoryTreeData:
 def _get_category_tree_data(
     category_links_gen: Callable[[], Iterable[CategoryLink]],
     pages_gen: Callable[[], Iterable[Page]],
+    link_target_gen: Callable[[], Iterable[LinkTarget]],
 ) -> _CategoryTreeData:
     """
     Generate category tree data from generators.
@@ -125,25 +126,32 @@ def _get_category_tree_data(
     data = _CategoryTreeData()
     for page in pages_gen():
         if page.is_article:
-            data.article_id_to_name[page.page_id] = page.name
+            data.article_id_to_name[page.page_id] = page.page_title
         else:
-            data.category_id_to_name[page.page_id] = page.name
+            data.category_id_to_name[page.page_id] = page.page_title
 
     name_to_id = {v: k for k, v in data.category_id_to_name.items()}
 
+    link_target = {entry.lt_id: entry.lt_title for entry in link_target_gen()}
+
     for link in category_links_gen():
-        parent_id = name_to_id.get(link.parent_name, None)
+        parent_name = link_target.get(link.cl_target_id, None)
+
+        if parent_name is None:
+            continue
+
+        parent_id = name_to_id.get(parent_name, None)
 
         if parent_id is None:
             continue
 
-        if link.is_article:
-            article_name = data.article_id_to_name.get(link.child_id, None)
+        if link.is_page:
+            article_name = data.article_id_to_name.get(link.cl_from, None)
             if article_name is None:
                 continue
-            data.category_to_articles[parent_id].append(link.child_id)
-        elif link.child_id in data.category_id_to_name:
-            data.category_edges.append((parent_id, link.child_id))
+            data.category_to_articles[parent_id].append(link.cl_from)
+        elif link.cl_from in data.category_id_to_name:
+            data.category_edges.append((parent_id, link.cl_from))
 
     return data
 
@@ -159,12 +167,15 @@ def process_categories(
     config: RunConfig,
     category_links_gen: Callable[[], Iterable[CategoryLink]],
     pages_gen: Callable[[], Iterable[Page]],
+    link_target_gen: Callable[[], Iterable[LinkTarget]],
 ) -> CategoriesInfo:
     """
     Main function of categories.
     """
 
-    data = _get_or_load_category_tree_data(config, category_links_gen, pages_gen)
+    data = _get_or_load_category_tree_data(
+        config, category_links_gen, pages_gen, link_target_gen
+    )
 
     cat_graph = _build_category_graph(data)
     excluded_categories, excluded_articles = _get_excluded(config, cat_graph, data)
@@ -208,6 +219,7 @@ def _get_or_load_category_tree_data(
     config: RunConfig,
     category_links_gen: Callable[[], Iterable[CategoryLink]],
     pages_gen: Callable[[], Iterable[Page]],
+    link_target_gen: Callable[[], Iterable[LinkTarget]],
 ) -> _CategoryTreeData:
     """
     Load or generate category tree data, using cache if enabled.
@@ -221,7 +233,9 @@ def _get_or_load_category_tree_data(
 
     if config.use_cache:
         if not os.path.exists(category_tree_cached):
-            data = _get_category_tree_data(category_links_gen, pages_gen)
+            data = _get_category_tree_data(
+                category_links_gen, pages_gen, link_target_gen
+            )
 
             category_tree_cached.parent.mkdir(parents=True, exist_ok=True)
 
@@ -235,7 +249,7 @@ def _get_or_load_category_tree_data(
                     "Loaded cached category tree data from %s", category_tree_cached
                 )
     else:
-        data = _get_category_tree_data(category_links_gen, pages_gen)
+        data = _get_category_tree_data(category_links_gen, pages_gen, link_target_gen)
 
     return data
 

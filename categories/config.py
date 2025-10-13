@@ -4,9 +4,6 @@ Defines the configuration for the categories processing script.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
-
-import argparse_dataclass
 
 
 @dataclass
@@ -59,16 +56,3 @@ class RunConfig:
             "help": "Percentile of article count that a category must have to not be deleted."
         },
     )
-
-
-def parse_config(args: Sequence[str] | None = None) -> RunConfig:
-    """
-    Parse command line arguments into a RunConfig dataclass.
-    """
-    parser = argparse_dataclass.ArgumentParser(RunConfig)
-    return parser.parse_args(args)
-
-
-if __name__ == "__main__":
-    config = parse_config()
-    print(config)
