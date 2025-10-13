@@ -1,0 +1,14 @@
+[project]
+name = "wiki-categories"
+version = "0.1.0"
+description = "Automated deployment of Wikipedia category graphs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "minify-html>=0.16.4",
+    "networkx>=3.5",
+    "numpy>=2.3.3",
+    "requests>=2.32.5",
+    "simple-parsing>=0.1.7",
+    "tqdm>=4.67.1",
+]

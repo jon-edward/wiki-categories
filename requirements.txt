@@ -1,7 +1,0 @@
-networkx~=3.3
-requests~=2.32
-tqdm~=4.66
-beautifulsoup4~=4.12
-numpy~=2.3.1
-argparse-dataclass~=2.0.0
-minify-html~=0.16.4
